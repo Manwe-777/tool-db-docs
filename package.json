@@ -1,0 +1,19 @@
+{
+  "name": "tool-db-web",
+  "version": "0.0.1",
+  "description": "A decentralized database for the web3",
+  "main": "index.js",
+  "authors": {
+    "name": "Manuel Etchegaray",
+    "email": ""
+  },
+  "repository": "/tool-db-web",
+  "scripts": {
+    "dev": "vuepress dev src",
+    "build": "vuepress build src"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "vuepress": "^1.5.3"
+  }
+}
