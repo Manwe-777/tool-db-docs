@@ -54,17 +54,11 @@ networkAdapter: typeof ToolDbNetworkAdapter;
 // A custom storage adapter function
 storageAdapter: ToolDbStorageAdapter;
 
-// Our client ID (defaults to a random ID)
-id: string;
-
 // The namespace/topic of our app
 topic: string;
 
-// Public and private (ECDSA) keys of our client. In the default network adapter these are used to sign
-// our messages as we join and leave the network, public key should match the client ID (as a base64 exported string).
-publicKey: CryptoKey | undefined;
-
-privateKey: CryptoKey | undefined;
+// Peer's ETH Web3 account, generated randomly at startup
+peerAccount: Account;
 ```
 
 ## Overridable methods

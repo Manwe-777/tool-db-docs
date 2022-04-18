@@ -24,26 +24,18 @@ function signIn(
   this: ToolDb,
   user: string,
   password: string
-): Promise<
-  | {
-      signKeys: CryptoKeyPair;
-      encryptionKeys: CryptoKeyPair;
-    }
-  | undefined
+): Promise<Account | undefined>
 > 
 ```
 
-Returns the key pairs for the user stored under alias `user` decrypted with `password`. If the alias is not found or the credentials are invalid it returns `undefined` instead.
+Returns a [Web3.eth](https://web3js.readthedocs.io/en/v1.2.11/web3-eth-accounts.html) account for this user, generated based on the key pair stored under alias `user` and decrypted with `password`. If the alias is not found or the credentials are invalid it returns `undefined` instead.
 
 ## `ToolDb.anonSignIn()`
 
 Type signature:
 
 ```ts
-function anonSignIn(this: ToolDb): Promise<{
-  signKeys: CryptoKeyPair;
-  encryptionKeys: CryptoKeyPair;
-}>
+function anonSignIn(this: ToolDb): void
 ```
 
 Creates a new, randomized set of keys and stores them in the database as our current logged in user, assigning a random name too, but without storing any of this into the database itself (an ephemereal user)
@@ -59,10 +51,7 @@ Type signature:
 ```ts
 function keysSignIn(
   this: ToolDb,
-  keys: {
-    signKeys: CryptoKeyPair;
-    encryptionKeys: CryptoKeyPair;
-  },
+  privateKey: string,
   username?: string
 ): Promise<{
   signKeys: CryptoKeyPair;
@@ -70,7 +59,7 @@ function keysSignIn(
 }>
 ```
 
-Like sign in, but instead of providing the password you simply pass the keys to the database. You can provide a username too, but its optional.
+Like sign in, but instead of providing the password you simply pass the private key to the database. You can provide a username too, but its optional.
 
 You can use this to promt the users to download their keys and use those to log into multiple devices without having to remember their password, or use it as a recovery mechanism as well.
 
@@ -80,10 +69,10 @@ You can use this to promt the users to download their keys and use those to log 
 Type signature:
 
 ```ts
-function getPubKey(this: ToolDb): Promise<string>
+function getPubKey(this: ToolDb): string | undefined
 ```
 
-Obtain the current logged in user's public key.
+Obtain the current logged in user's account adress.
 
 
 ## `ToolDb.user`
@@ -92,20 +81,21 @@ Type signature:
 
 ```ts
 interface ToolDbUser: {
-  keys: {
-    signKeys: CryptoKeyPair;
-    encryptionKeys: CryptoKeyPair;
-  };
+  account: Account;
   name: string;
-  pubKey: string;
 } | undefined
 ```
 
-You can use this variable to check the user credentials and username.
+You can use this variable to check the user account, adress and username.
 
-`client.user.pubKey` contains the Base64 version of the signing public key.
+`client.user.account` contains the user account, a Web3/ETH standard account, containing the keys and web3 methods for managing it.
+
+Please read more about Web3.eth accounts and its utilities [here](https://web3js.readthedocs.io/en/v1.2.11/web3-eth-accounts.html)
 
 ::: tip
 You can check if you are logged in by checking `client.user === undefined`
 :::
 
+::: warning
+Soon `client.user.account` will moved to a private space within tooldb for security, and all publicly-accessible functions (like the user adress) will have their own accessors.
+:::
