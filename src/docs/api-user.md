@@ -74,8 +74,22 @@ function getPubKey(this: ToolDb): string | undefined
 
 Obtain the current logged in user's account adress.
 
+::: tip
+You can check if you are logged in by checking `client.getPubKey() === undefined`
+:::
 
-## `ToolDb.user`
+## `ToolDb.getUsername()`
+
+Type signature:
+
+```ts
+function getUsername(this: ToolDb): string | undefined
+```
+
+Obtain the current logged in user's name.
+
+
+## `ToolDb._user` (now private)
 
 Type signature:
 
@@ -88,14 +102,6 @@ interface ToolDbUser: {
 
 You can use this variable to check the user account, adress and username.
 
-`client.user.account` contains the user account, a Web3/ETH standard account, containing the keys and web3 methods for managing it.
+`client._user.account` contains the user account, a Web3/ETH standard account, containing the keys and web3 methods for managing it.
 
 Please read more about Web3.eth accounts and its utilities [here](https://web3js.readthedocs.io/en/v1.2.11/web3-eth-accounts.html)
-
-::: tip
-You can check if you are logged in by checking `client.user === undefined`
-:::
-
-::: warning
-Soon `client.user.account` will moved to a private space within tooldb for security, and all publicly-accessible functions (like the user adress) will have their own accessors.
-:::
