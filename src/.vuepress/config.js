@@ -55,7 +55,7 @@ module.exports = {
         {
           title: "Guides",
           collapsable: false,
-          children: ["basic-setup", "nodejs-dht-discovery", "namespaces", "adapters"],
+          children: ["basic-setup", "nodejs-dht-discovery", "namespaces", "crdts", "adapters"],
         },
       ],
     },

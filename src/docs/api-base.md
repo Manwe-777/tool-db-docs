@@ -44,12 +44,12 @@ Type signature:
 function putCrdt<T = any>(
   this: ToolDb,
   key: string,
-  value: BinaryChange[],
+  crdt: BaseCrdt<T, any, any>,
   userNamespaced = false
 ): Promise<CrdtPutMessage | null>
 ```
 
-Puts the given [Automerge](https://www.npmjs.com/package/automerge) changes (`value`) to the crdt stored at `key`.
+Puts the given CRDT changes to the crdt stored at `key`.
 
 If `userNamespaced` is set to true, the data will be stored under our private namespace.
 
@@ -62,12 +62,13 @@ Type signature:
 function getCrdt(
   this: ToolDb,
   key: string,
+  crdt: BaseCrdt<T, any, any>,
   userNamespaced = false,
   timeoutMs = 1000
 ): Promise<string | null>
 ```
 
-Gets the given [Automerge](https://www.npmjs.com/package/automerge) document stored at `key` as a base64 encoded binary document. If `userNamespaced` is set to true, the key will include our public key in the namespace in the form of `:{publicKey}.{key}` as per the keys document.
+Gets the given CRDT document stored at `key` as a list of changes and merges the recieved changes into `crdt`. If `userNamespaced` is set to true, the key will include our public key in the namespace in the form of `:{publicKey}.{key}` as per the keys document.
 
 `timeoutMs` sets the maximum time allowed for the function to wait for other peers responses. The first response will be priorized and returned, but if any subsecuent and more updated data from other peers is obtained _after_ the promise resolves, it will be stored for any later checks.
 

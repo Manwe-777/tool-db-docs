@@ -23,7 +23,7 @@ enum VerifyResult {
   InvalidVerification = "InvalidVerification",
   CantOverwrite = "CantOverwrite",
   InvalidTimestamp = "InvalidTimestamp",
-  PubKeyMismatch = "PubKeyMismatch",
+  AddressMismatch = "AddressMismatch",
   NoProofOfWork = "NoProofOfWork",
   InvalidHashNonce = "InvalidHashNonce",
   InvalidSignature = "InvalidSignature",
@@ -113,4 +113,25 @@ interface ToolDbStore {
 }
 
 type ToolDbStorageAdapter = (dbName?: string) => ToolDbStore;
+```
+
+## `BaseCrdt`
+
+```ts
+class BaseCrdt<T = any, Changes = any, Value = any> {
+  // Type is a string to allow for custom CRDT classes to be created!
+  public type: string = "MAP" | "LIST" | "COUNTER";
+
+  public mergeChanges(changes: Changes[]) {
+    //
+  }
+
+  public getChanges(): Changes[] {
+    return [];
+  }
+
+  get value(): Value {
+    return "" as any;
+  }
+}
 ```
