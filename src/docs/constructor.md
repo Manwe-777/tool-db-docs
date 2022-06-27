@@ -12,9 +12,6 @@ const node = new ToolDb(options);
 ## Options
 
 ```ts
-// Database name to use
-db: string;
-
 // Show debug console logs
 debug: boolean;
 
@@ -51,14 +48,14 @@ storageName: string;
 // A custom network adapter class
 networkAdapter: typeof ToolDbNetworkAdapter;
 
-// A custom storage adapter function
-storageAdapter: ToolDbStorageAdapter;
+// A custom storage adapter class
+storageAdapter: typeof ToolDbStorageAdapter;
+
+// A custom user adapter class
+userAdapter: typeof ToolDbUserAdapter
 
 // The namespace/topic of our app
 topic: string;
-
-// Peer's ETH Web3 account, generated randomly at startup
-peerAccount: Account;
 ```
 
 ## Overridable methods

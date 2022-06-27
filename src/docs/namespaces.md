@@ -2,7 +2,7 @@
 
 ## How namespaces work
 
-Tool db being a decentralized key-value database makes a few assumptions on the format of the keys (namespaces) we use to store data, there is basically three types of key namespaces you can use, and the only difference will be the type of verification check that is applied to the incoming data, before it is actually persisted or stored;
+Tool db being a decentralized key-value database makes a few assumptions on the format of the keys (namespaces) we use to store data, there is basically three types of key namespaces you can use, and the only difference will be the type of verification check that is applied to the incoming data, before it is actually persisted or relayed;
 - Public namespace
 - Private namespace
 - Frozen namespace
@@ -18,7 +18,7 @@ Public namespace simply stores the data at `{key}`, it does not enforce any veri
 
 ## Private namespace
 
-Private namespace stores data at `:{publicKey}.{key}`, this is where you should store all data from users that requires authenthication.
+Private namespace stores data at `:{publicKey}.{key}`, this is where you should store all data from users that requires authentication.
 
 For data to be stored in the private namespace peers will first check against the message containing the payload, the most important check is the signature of the message, that makes it virtually impossible for an attacker to modify the data without creating a signature mismatch.
 

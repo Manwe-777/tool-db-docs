@@ -5,12 +5,13 @@
 ```ts
 interface VerificationData<T = any> {
   k: string; // Key/id
-  p: string; // public key
+  a: string; // address
   n: number; // nonce
   h: string; // hash of JSON.stringify(value) + nonce
   t: number; // Timestamp this was created
   s: string; // signature
   v: T; // value
+  c: string | null; // CRDT type (null for regular values)
 }
 ```
 
@@ -28,21 +29,6 @@ enum VerifyResult {
   InvalidHashNonce = "InvalidHashNonce",
   InvalidSignature = "InvalidSignature",
   Verified = "Verified",
-}
-```
-
-## `UserRootData`
-
-```ts
-interface UserRootData {
-  keys: {
-    skpub: string;
-    skpriv: string;
-    ekpub: string;
-    ekpriv: string;
-  };
-  iv: string;
-  pass: string;
 }
 ```
 
@@ -64,55 +50,9 @@ interface Peer {
   timestamp: number;
   host: string;
   port: number;
-  pubkey: string;
+  adress: string;
   sig: string;
 }
-```
-
-## `ToolDbNetworkAdapter`
-
-```ts
-class ToolDbNetworkAdapter {
-  constructor(db: ToolDb) {
-    //
-  }
-
-  public close(clientId: string): void {
-    //
-  }
-
-  public sendToAll(
-    msg: ToolDbMessage,
-    crossServerOnly = false,
-    isRelay = false
-  ) {
-    //
-  }
-
-  public sendToClientId(clientId: string, msg: ToolDbMessage) {
-    //
-  }
-}
-```
-
-## `ToolDbStorageAdapter`
-
-```ts
-interface ToolDbStore {
-  start: () => void;
-  put: (
-    key: string,
-    data: string,
-    callback: (err: any | null, data?: string) => void
-  ) => void;
-  get: (
-    key: string,
-    callback: (err: any | null, data?: string) => void
-  ) => void;
-  query: (key: string) => Promise<string[]>;
-}
-
-type ToolDbStorageAdapter = (dbName?: string) => ToolDbStore;
 ```
 
 ## `BaseCrdt`

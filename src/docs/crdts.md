@@ -1,6 +1,10 @@
 # CRDTs
 
-Currently we implemented our own CRDTs logic for documents, the reason we chose to create our own algorithm versus using existing and tested solutions like Automerge or Yjs is because I needed a simple algorithm that handles only two problems I had while making apps (maps and lists), I found out there was no need to include full JSON documents crdts into the database, and it was overkill to inlcude or support other protocols, which were not blending with the API very well. Also, this way, as developers, we have more control over the data flowing between peers, and we can still use Automerge or Yjs if we want by creating a new extension of the [BaseCrdt](types.html#basecrdt) class like a plugin.
+CRDT (conflict-free replicated data types) are probably the most important aspect for a healthy peer to peer application nowadays, handlind scattered, unordered updates and arriving to the same result across multiple peers is key. If you wish to learn the basics of what they are and what problems they solve for your decentralized applications, please check out ----------
+
+Basically, implementing and making CRDTs work is a hard problem to solve. You can have simple timestamp based updates, internal clocks, and even more complex tree and graph structures. There is no good answer as to what is the best algorithm currently, and there are many of them, with lots of great improvements made constantly!
+
+For Tool Db we implemented our own (and very simplistic) CRDT logic, the reason I chose to create our own algorithm versus using existing and tested solutions like [Automerge](https://automerge.org/) or [Yjs](https://docs.yjs.dev/) is because I needed a simple algorithm that handles only two problems I had while making apps (maps and lists), I found out there was no need to include full JSON documents crdts like Automerge (which was the original algorithm I used), and it was overkill to inlcude or support other protocols in the code directly (more dependencies), which were not blending with the API very well. Also, this way, as developers, we have more control over the data flowing between peers, and we can still use Automerge or Yjs if we want by creating a new extension of the [BaseCrdt](types.html#basecrdt) class like a plugin.
 
 The CRDT class is very simple to use, just spwn a new instance and you can begin making changes to it;
 
@@ -11,7 +15,7 @@ pets.SET("cats", 3);
 pets.DEL("fish");
 ```
 
-Each CRDT type has its own setter methods, depending on its usage that will vary!
+Each CRDT type has its own setter methods, beware that, depending on its usage it will be different; if you are using a `ListCrdt` for example, you will use `PUSH`, `INS` and `DEL`.
 
 Once you are all set, just pass the CRDT class to the put method in the db;
 
@@ -31,11 +35,10 @@ You can also add a key listener and subscribe to a CRDT;
 toolDb.addKeyListener<MapChanges<number>[]>(
   db.getUserNamespacedKey(`my-pets`),
   (msg) => {
-    if (msg.type === "crdtPut") {
-      pets.mergeChanges(msg.v);
-    }
+    pets.mergeChanges(msg.v);
   }
 );
+
 toolDb.subscribeData(`my-pets`, true);
 ```
 

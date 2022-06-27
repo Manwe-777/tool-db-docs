@@ -8,7 +8,7 @@ On the server peers, the ones you want to announce and have other peers connecti
 Ideally you also want to have tool use the same IP adress on its configuration, so it can actually tell other hosts about it.
 
 ```js
-import { ToolDb } from "tool-db";
+import { ToolDb, ToolDbLeveldb } from "tool-db";
 import DC from "discovery-channel";
 
 const myIp = "127.0.0.1";
@@ -18,6 +18,7 @@ const toolDbServer = new ToolDb({
   topic: "myswarmtopic",
   host: myIp,
   port: 9000,
+  storageAdapter: ToolDbLeveldb,
 });
 
 var channel = DC();
@@ -37,7 +38,7 @@ channel.on("peer", (_id: any, peer: any) => {
 For the clients its almost the same process, except you dont want to announce yourself, instead you want to accumulate enough peers and then pass those onto the node constructor. You can also connect to peers as you find them, this will vary depending on your implementation;
 
 ```js
-import { ToolDb } from "tool-db";
+import { ToolDb, ToolDbLeveldb } from "tool-db";
 import DC from "discovery-channel";
 
 const toolDbClient = new ToolDb({
@@ -45,6 +46,7 @@ const toolDbClient = new ToolDb({
   topic: "myswarmtopic",
   host: myIp,
   port: 9000,
+  storageAdapter: ToolDbLeveldb,
 });
 
 const peers = [];

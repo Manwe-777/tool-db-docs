@@ -64,18 +64,18 @@ Like sign in, but instead of providing the password you simply pass the private 
 You can use this to promt the users to download their keys and use those to log into multiple devices without having to remember their password, or use it as a recovery mechanism as well.
 
 
-## `ToolDb.getPubKey()`
+## `ToolDb.getAddress()`
 
 Type signature:
 
 ```ts
-function getPubKey(this: ToolDb): string | undefined
+function getAddress(): string | undefined
 ```
 
 Obtain the current logged in user's account adress.
 
 ::: tip
-You can check if you are logged in by checking `client.getPubKey() === undefined`
+You can check if you are logged in by checking `client.getAddress() === undefined`
 :::
 
 ## `ToolDb.getUsername()`
@@ -83,25 +83,29 @@ You can check if you are logged in by checking `client.getPubKey() === undefined
 Type signature:
 
 ```ts
-function getUsername(this: ToolDb): string | undefined
+function getUsername(): string | undefined
 ```
 
 Obtain the current logged in user's name.
 
-
-## `ToolDb._user` (now private)
+## `ToolDb.encryptAccount()`
 
 Type signature:
 
 ```ts
-interface ToolDbUser: {
-  account: Account;
-  name: string;
-} | undefined
+function encryptAccount(account: Account, password: string): EncryptedKeystoreV3Json
 ```
 
-You can use this variable to check the user account, adress and username.
+Encrypts this account using the web3 standard. This is the same method used internally for signup.
 
-`client._user.account` contains the user account, a Web3/ETH standard account, containing the keys and web3 methods for managing it.
+## `ToolDb.decryptAccount()`
+
+Type signature:
+
+```ts
+function decryptAccount(account: EncryptedKeystoreV3Json, password: string): Account | void
+```
+
+Decrypts this account using the web3 standard. This is the same method used internally for ignin. Throws an error if failed, eg: if the password is incorrect.
 
 Please read more about Web3.eth accounts and its utilities [here](https://web3js.readthedocs.io/en/v1.2.11/web3-eth-accounts.html)
