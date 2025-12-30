@@ -1,111 +1,273 @@
-# Getting started
+# Getting Started
 
-## Intro
+## Introduction
 
-Ideally you want your dApp to work without any central servers, unfortunately to actually start seeding your data across multiple peers, you will need at least one static peer where others can connect to, in case no other peer is online at that moment. This creates a complex paradigm where users should deploy at least some servers to start a decentralized network of peers. Tool Db helps by providing the same API across both client and servers, making them both be just "nodes" in the network.
+Ideally you want your dApp to work without any central servers. However, to start seeding data across multiple peers, you'll need at least one static peer where others can connect in case no other peer is online. This creates a paradigm where users should deploy some servers to bootstrap a decentralized network.
 
-You can also have your "server" peers be more powerful, static nodes across the network and have your "clients" find those via DHT. This creates a federated structure that is decentralized, more capable of scaling and very fault tolerant.
+Tool Db helps by providing the same API across both clients and servers, making them both just "nodes" in the network.
 
-There are many configs you can use to start a node, in this guide we will use a simple client/server setup, and later we will add a DHT so the clients can find the server without knowing their IP beforehand.
+You can also have your "server" peers be more powerful, static nodes and have "clients" find them via DHT. This creates a federated structure that is decentralized, scalable, and fault-tolerant.
 
-To start a peer in nodejs simply use;
+## Installation
 
-```js
+```bash
+npm install tool-db
+```
+
+For specific adapters, install them separately:
+
+```bash
+# Network adapters
+npm install @tool-db/websocket-network
+npm install @tool-db/webrtc-network
+
+# Storage adapters
+npm install @tool-db/leveldb-store   # Node.js
+npm install @tool-db/indexeddb-store # Browser
+
+# User adapters
+npm install @tool-db/ecdsa-user      # Default ECDSA
+npm install @tool-db/web3-user       # Ethereum wallet
+```
+
+## Basic Server Setup
+
+To start a server peer in Node.js:
+
+```ts
 import { ToolDb } from "tool-db";
+import ToolDbWebsocket from "@tool-db/websocket-network";
+import ToolDbLeveldb from "@tool-db/leveldb-store";
+import EcdsaUser from "@tool-db/ecdsa-user";
 
 const server = new ToolDb({
+  networkAdapter: ToolDbWebsocket,
+  storageAdapter: ToolDbLeveldb,
+  userAdapter: EcdsaUser,
   server: true,
   host: "localhost",
   port: 9000,
+  topic: "my-app",
 });
-```
 
-Thats it! notice we are not telling this node _where_ to connect to, but rather just indicating its own adress, so he can later inform about it to other peers. in production you will want to use the actual ip or host from this instance rather than localhost.
+// Wait for initialization
+await server.ready;
+console.log("Server running on port 9000");
+```
 
 ::: tip
-The reason we need to tag servers, is that they relay data differently between eachother than clients, if you tag all peers as servers, they will inmediately replicate all data they receive troughout the network, probably exceeding the localstorage quota on them very quickly as more peers join the network.
-Server peers are suposed to be used only on enviroments where storage is not a problem and to be used as a form of "data replicator" between other server peers. non-server peers will only store the data they are interested in, and will not relay that to peers that did not ask for it.
+Server peers immediately replicate all data they receive throughout the network. Only use `server: true` on nodes with sufficient storage, as they will store all data from the network.
 :::
 
-Now for the nodes connecting to this server the setup is just a little different;
+## Basic Client Setup
 
-```js
+For clients connecting to a server:
+
+```ts
 import { ToolDb } from "tool-db";
+import ToolDbWebsocket from "@tool-db/websocket-network";
+import ToolDbIndexeddb from "@tool-db/indexeddb-store";
+import EcdsaUser from "@tool-db/ecdsa-user";
 
 const client = new ToolDb({
+  networkAdapter: ToolDbWebsocket,
+  storageAdapter: ToolDbIndexeddb,
+  userAdapter: EcdsaUser,
   peers: [{ host: "localhost", port: 9000 }],
-  host: "127.0.0.1",
-  port: 8000,
+  topic: "my-app",
 });
+
+await client.ready;
 ```
 
-## Use in browsers
+## Browser Setup with WebRTC
 
-To use it on html without packages you can include it with a script tag;
+For browser-to-browser connections without a server:
+
+```ts
+import { ToolDb } from "tool-db";
+import ToolDbWebrtc from "@tool-db/webrtc-network";
+import ToolDbIndexeddb from "@tool-db/indexeddb-store";
+import EcdsaUser from "@tool-db/ecdsa-user";
+
+const db = new ToolDb({
+  networkAdapter: ToolDbWebrtc,
+  storageAdapter: ToolDbIndexeddb,
+  userAdapter: EcdsaUser,
+  topic: "my-app",
+  debug: true,
+});
+
+await db.ready;
+```
+
+## Using via CDN
+
+For HTML without a bundler:
 
 ```html
 <script src="https://unpkg.com/tool-db/bundle.js"></script>
-```
-
-Then just use the `tooldb` global variable as if you were importing it
-```js
+<script>
 const { ToolDb, sha256 } = tooldb;
+
+const db = new ToolDb({
+  topic: "my-app",
+});
+
+db.ready.then(() => {
+  console.log("Database ready!");
+});
+</script>
 ```
 
-## Users
+## User Authentication
 
-To test everything works we can send a message, but ToolDb is not really a communications protocol (that part is handled by the network adapters), instead what we really care about is storage. We need to tell other peers to put data, give it back to us, subscribe to data changes, etc. All of this is handled by the API in the nodes we just created.
+Before writing data, you need to authenticate. This creates or retrieves your cryptographic keys:
 
-To start adding data we must first authorize ourselves into the network, that means simply creating a set of public and private keys that will become our user identifiers for all data we write. Other peers will then read our messages, with the data we want to write, signed by us, and accept them if they match.
-ToolDb offers methods for both sign up and sign in, but for this example we will use anonymous sign in, that will create a random set of keys and give us a random username;
-
-```js
-client.anonSignIn().then(console.log);
+```ts
+// Anonymous sign in (for guests)
+await db.anonSignIn();
+console.log("Guest address:", db.userAccount.getAddress());
 ```
-
-You should see the user data in the console after it sucessfully creates its keys!
 
 ::: warning
-Anonymous sign in will work offline, just like regular sign in, but sign up requires checking if the username you chose already exists in the network (one peer confirmation) to avoid collisions in the name, therefore it will fail if offline!
-We recognize this is not the best approach and we are looking into alternatives to solve this issue.
+Anonymous sign in works offline, but `signUp()` requires network connectivity to check for username conflicts.
 :::
 
+For persistent accounts:
 
+```ts
+// Sign up new user
+try {
+  await db.signUp("username", "password");
+  console.log("Account created!");
+} catch (e) {
+  console.error("Username may already exist");
+}
 
-## Put data
-
-Now we have our user we can finally put some data;
-
-```js
-client.putData("testKey", "an amazing value").then(
-  () => console.log("Put OK!")
-);
+// Sign in existing user
+await db.signIn("username", "password");
+console.log("Welcome,", db.userAccount.getUsername());
 ```
 
-::: tip
-You can nest promises instead of await and catch errors more efficiently!
+## Storing Data
 
-```js
-client.anonSignIn()
-  .then(() =>
-    client.putData("testKey", "an amazing value").then(() =>
-      console.log("Put OK!")
-    )
-  )
-  .catch(console.error);
+Once authenticated, you can store data:
+
+```ts
+// Store public data
+await db.putData("my-key", { hello: "world" });
+console.log("Data stored!");
+
+// Store user-namespaced (private) data
+await db.putData("settings", { theme: "dark" }, true);
 ```
-:::
 
-## Get data
+## Retrieving Data
 
-Obtaining data from the database is as simple as using the `getData()` method, and we can test that right now on the server peer and retrieve the value our client just inserted, but instead (to make it more interesting) we will add a listener to our newly added key, so whenever the value is modified it will trigger a callback we define. On the server side, add this after the server is instantiated;
+```ts
+// Get public data
+const data = await db.getData("my-key");
+console.log(data); // { hello: "world" }
 
-```js
-server.addKeyListener("testKey", (message) => {
-  if (message.type === "put") {
-    console.log("Message received! value is " + message.v);
+// Get user-namespaced data
+const settings = await db.getData("settings", true);
+console.log(settings); // { theme: "dark" }
+```
+
+## Real-time Updates
+
+Subscribe to changes with key listeners:
+
+```ts
+// Add a listener for a specific key
+const listenerId = db.addKeyListener("chat-messages", (msg) => {
+  if (msg.type === "put") {
+    console.log("New message:", msg.v);
   }
 });
+
+// Subscribe to receive updates from peers
+db.subscribeData("chat-messages");
+
+// Later, remove the listener
+db.removeKeyListener(listenerId);
 ```
 
- 
+## Complete Example
+
+Here's a full working example:
+
+```ts
+import { ToolDb } from "tool-db";
+import ToolDbWebrtc from "@tool-db/webrtc-network";
+import ToolDbIndexeddb from "@tool-db/indexeddb-store";
+import EcdsaUser from "@tool-db/ecdsa-user";
+
+async function main() {
+  // Create database instance
+  const db = new ToolDb({
+    networkAdapter: ToolDbWebrtc,
+    storageAdapter: ToolDbIndexeddb,
+    userAdapter: EcdsaUser,
+    topic: "my-chat-app",
+    debug: true,
+  });
+
+  // Wait for initialization
+  await db.ready;
+
+  // Sign in anonymously
+  await db.anonSignIn();
+  console.log("Signed in as:", db.userAccount.getAddress());
+
+  // Subscribe to chat messages
+  db.addKeyListener("chat-", (msg) => {
+    console.log("Message received:", msg.v);
+  });
+
+  // Send a message
+  await db.putData("chat-" + Date.now(), {
+    from: db.userAccount.getAddress(),
+    text: "Hello, world!",
+    timestamp: Date.now(),
+  });
+
+  console.log("Message sent!");
+}
+
+main().catch(console.error);
+```
+
+## Connection Events
+
+Monitor connection status:
+
+```ts
+// Called when first connected to any peer
+db.onConnect = () => {
+  console.log("Connected to network!");
+};
+
+// Called when disconnected from all peers
+db.onDisconnect = () => {
+  console.log("Disconnected from network");
+};
+
+// Called for each peer connection
+db.onPeerConnect = (peerId: string) => {
+  console.log("Connected to peer:", peerId);
+};
+
+// Called for each peer disconnection
+db.onPeerDisconnect = (peerId: string) => {
+  console.log("Disconnected from peer:", peerId);
+};
+```
+
+## Next Steps
+
+- Learn about [CRDTs](crdts.md) for conflict-free collaborative data
+- Explore [Namespaces](namespaces.md) for data organization
+- Set up [DHT Discovery](nodejs-dht-discovery.md) for serverless peer discovery
+- Check the [Constructor Options](constructor.md) for all configuration options

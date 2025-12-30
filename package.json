@@ -1,13 +1,17 @@
 {
-  "name": "tool-db-web",
-  "version": "0.0.1",
-  "description": "A decentralized database for the web3",
+  "name": "tool-db-docs",
+  "version": "1.0.0",
+  "description": "Documentation for Tool Db - A Peer-to-Peer Decentralized Database",
   "main": "index.js",
-  "authors": {
+  "author": {
     "name": "Manuel Etchegaray",
-    "email": ""
+    "email": "manuel.etchegaray7@gmail.com"
   },
-  "repository": "/tool-db-web",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Manwe-777/tool-db-docs"
+  },
+  "homepage": "https://manwe-777.github.io/tool-db-docs/",
   "scripts": {
     "dev": "vuepress dev src",
     "build": "vuepress build src"
@@ -15,5 +19,8 @@
   "license": "MIT",
   "devDependencies": {
     "vuepress": "^1.5.3"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   }
 }

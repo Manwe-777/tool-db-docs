@@ -1,33 +1,270 @@
-# Custom adapters
+# Adapters
 
-An adapter takes a core functionality of the database and replaces its internals with different code. They are basically plugins, but for specific tasks.
+Adapters take a core functionality of the database and replace its internals with different implementations. They are essentially plugins for specific tasks.
 
-Currently there are three modules you can write adapters to; [Network](https://github.com/Manwe-777/tool-db/blob/main/src/adapters-base/networkAdapter.ts), [Storage](https://github.com/Manwe-777/tool-db/blob/main/src/adapters-base/storageAdapter.ts) and [User](https://github.com/Manwe-777/tool-db/blob/main/src/adapters-base/userAdapter.ts). When writing a new adapter you should follow their types spec and begin with extending those. We *highly* recommend using Typescript for this, as it will make the process of finding bugs a lot simpler. You can also look at the [source code](https://github.com/Manwe-777/tool-db/tree/main/src) for some quick start examples; (check below for specific implementations)
+Tool Db has three types of adapters:
 
-Currently for storage there are only two adapters by default, one for browsers (`indexedb`) and another for nodejs (`leveldb`). These are very simple, their only task is to initialize the storage, put data, get it and query the keys (if available).
+1. **Network Adapters** — Handle peer connections and message routing
+2. **Storage Adapters** — Handle data persistence
+3. **User Adapters** — Handle authentication and key management
 
-For network the default adapter is `toolDbWebsocket`, it creates WebSocket connections between peers and shares the peers defined as servers troughout the network, therefore, you will always need at least a single server peer to act as a boostrap node, so other peers can join. This adapter is also compatible with the [DHT guide](nodejs-dht-discovery.html#nodejs-dht-discovery), although these are usually incompatible with having browsers find nodejs servers to connect to.
+## Network Adapters
 
-In order to provide a connection layer for browsers Tool Db comes with `toolDbWebrtc`, this adapter creates a mesh network between peers using webrtc and webtorrent for peers discovery. This allows browsers to connect to eachother without a central server, and also works in node using [wrtc](https://www.npmjs.com/package/wrtc). Network adapters are special in the sense they not handle connections, messages, and content routing/deduplication. 
+Network adapters handle the connection layer between peers.
 
-User adapters can do a lot of things, most importantly they handle signing and storage of key pairs; But you can make it so they connect to a wallet or service that provides those features instead, for an extra layer of security.
+### WebSocket Network (`websocket-network`)
 
-You can see an example of [Tool Db using WebRtc to create a chat](https://tool-db-chat.on.fleek.co/) _([source code on github](https://github.com/Manwe-777/tool-db-chat))_
+The WebSocket adapter creates connections between peers and shares server peer information throughout the network. You'll need at least one server peer to act as a bootstrap node.
 
+```bash
+npm install @tool-db/websocket-network
+```
 
-- Storage adapters:
+```ts
+import { ToolDb } from "tool-db";
+import ToolDbWebsocket from "@tool-db/websocket-network";
 
-[Indexedb](https://github.com/Manwe-777/tool-db/blob/main/src/adapters/toolDbIndexedb.ts)
+const db = new ToolDb({
+  networkAdapter: ToolDbWebsocket,
+  server: true,
+  host: "localhost",
+  port: 9000,
+});
+```
 
-[Level](https://github.com/Manwe-777/tool-db/blob/main/src/adapters/toolDbLeveldb.ts)
+### WebRTC Network (`webrtc-network`)
 
-- Network adapters:
+The WebRTC adapter creates a mesh network between peers using WebRTC and WebTorrent trackers for peer discovery. This allows browsers to connect directly to each other without a central server.
 
-[Websocket](https://github.com/Manwe-777/tool-db/blob/main/src/adapters/toolDbWebsocket.ts)
+```bash
+npm install @tool-db/webrtc-network
+```
 
-[Webrtc](https://github.com/Manwe-777/tool-db/blob/main/src/adapters/toolDbWebrtc.ts)
+```ts
+import { ToolDb } from "tool-db";
+import ToolDbWebrtc from "@tool-db/webrtc-network";
 
-- User/keys adapters:
+const db = new ToolDb({
+  networkAdapter: ToolDbWebrtc,
+  topic: "my-app-topic",
+});
+```
 
-[Web3.eth User](https://github.com/Manwe-777/tool-db/blob/main/src/adapters/toolDbWeb3User.ts)
+**Features:**
+- Browser-to-browser P2P connections
+- Automatic peer discovery via WebTorrent trackers
+- Works in Node.js with the `wrtc` package
+- Exponential backoff reconnection
+- Online/offline network awareness
 
+### Hybrid Network (`hybrid-network`)
+
+Combines multiple network transports for maximum connectivity.
+
+```bash
+npm install @tool-db/hybrid-network
+```
+
+```ts
+import { ToolDb } from "tool-db";
+import ToolDbHybrid from "@tool-db/hybrid-network";
+
+const db = new ToolDb({
+  networkAdapter: ToolDbHybrid,
+});
+```
+
+## Storage Adapters
+
+Storage adapters handle how data is persisted locally.
+
+### LevelDB Store (`leveldb-store`)
+
+For Node.js server environments:
+
+```bash
+npm install @tool-db/leveldb-store
+```
+
+```ts
+import { ToolDb } from "tool-db";
+import ToolDbLeveldb from "@tool-db/leveldb-store";
+
+const db = new ToolDb({
+  storageAdapter: ToolDbLeveldb,
+  storageName: "my-database",
+});
+```
+
+### IndexedDB Store (`indexeddb-store`)
+
+For browser environments:
+
+```bash
+npm install @tool-db/indexeddb-store
+```
+
+```ts
+import { ToolDb } from "tool-db";
+import ToolDbIndexeddb from "@tool-db/indexeddb-store";
+
+const db = new ToolDb({
+  storageAdapter: ToolDbIndexeddb,
+  storageName: "my-database",
+});
+```
+
+### Redis Store (`redis-store`)
+
+For server deployments requiring shared storage:
+
+```bash
+npm install @tool-db/redis-store
+```
+
+```ts
+import { ToolDb } from "tool-db";
+import ToolDbRedis from "@tool-db/redis-store";
+
+const db = new ToolDb({
+  storageAdapter: ToolDbRedis,
+  // Configure via modules option
+  modules: {
+    redis: {
+      url: "redis://localhost:6379"
+    }
+  }
+});
+```
+
+## User Adapters
+
+User adapters handle authentication and cryptographic operations.
+
+### ECDSA User (`ecdsa-user`)
+
+The default ECDSA-based user authentication using Web Crypto API:
+
+```bash
+npm install @tool-db/ecdsa-user
+```
+
+```ts
+import { ToolDb } from "tool-db";
+import EcdsaUser from "@tool-db/ecdsa-user";
+
+const db = new ToolDb({
+  userAdapter: EcdsaUser,
+});
+
+// Sign up with username and password
+await db.signUp("username", "password");
+
+// Sign in
+await db.signIn("username", "password");
+```
+
+### Web3 User (`web3-user`)
+
+For Ethereum wallet-based authentication:
+
+```bash
+npm install @tool-db/web3-user
+```
+
+```ts
+import { ToolDb } from "tool-db";
+import Web3User from "@tool-db/web3-user";
+
+const db = new ToolDb({
+  userAdapter: Web3User,
+});
+```
+
+## Writing Custom Adapters
+
+When writing a new adapter, extend the base adapter class and implement the required methods. We highly recommend using TypeScript for type safety.
+
+### Custom Network Adapter
+
+```ts
+import { ToolDb, ToolDbNetworkAdapter } from "tool-db";
+
+export default class MyNetworkAdapter extends ToolDbNetworkAdapter {
+  constructor(db: ToolDb) {
+    super(db);
+    // Initialize your network layer
+  }
+
+  // Implement connection methods
+}
+```
+
+### Custom Storage Adapter
+
+```ts
+import { ToolDb, ToolDbStorageAdapter } from "tool-db";
+
+export default class MyStorageAdapter extends ToolDbStorageAdapter {
+  constructor(db: ToolDb, forceStorageName?: string) {
+    super(db, forceStorageName);
+    // Initialize your storage
+  }
+
+  async put(key: string, data: string): Promise<void> {
+    // Store data
+  }
+
+  async get(key: string): Promise<string> {
+    // Retrieve data
+  }
+
+  async query(key: string): Promise<string[]> {
+    // Query keys by prefix
+  }
+}
+```
+
+### Custom User Adapter
+
+```ts
+import { ToolDb, ToolDbUserAdapter, VerificationData } from "tool-db";
+
+export default class MyUserAdapter extends ToolDbUserAdapter {
+  constructor(db: ToolDb) {
+    super(db);
+  }
+
+  async anonUser(): Promise<void> {
+    // Generate anonymous user keys
+  }
+
+  async signData(data: string): Promise<string> {
+    // Sign data with private key
+  }
+
+  async verifySignature(message: Partial<VerificationData>): Promise<boolean> {
+    // Verify message signature
+  }
+
+  getAddress(): string | undefined {
+    // Return current user's public key/address
+  }
+
+  getUsername(): string | undefined {
+    // Return current user's name
+  }
+}
+```
+
+## Base Adapter Source
+
+For implementation reference, see the base adapter classes:
+
+- [NetworkAdapter](https://github.com/Manwe-777/tool-db/blob/main/packages/tool-db/lib/adapters-base/networkAdapter.ts)
+- [StorageAdapter](https://github.com/Manwe-777/tool-db/blob/main/packages/tool-db/lib/adapters-base/storageAdapter.ts)
+- [UserAdapter](https://github.com/Manwe-777/tool-db/blob/main/packages/tool-db/lib/adapters-base/userAdapter.ts)
+
+## Examples
+
+You can see a working example of [Tool Db using WebRTC to create a chat](https://manwe-777.github.io/tool-db-chat-example/) ([source code on GitHub](https://github.com/Manwe-777/tool-db-chat-example))

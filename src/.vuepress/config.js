@@ -11,6 +11,12 @@ module.exports = {
   description: description,
 
   /**
+   * Base URL for GitHub Pages deployment
+   * Ref：https://v1.vuepress.vuejs.org/config/#base
+   */
+  base: "/tool-db-docs/",
+
+  /**
    * Extra tags to be injected to the page HTML `<head>`
    *
    * ref：https://v1.vuepress.vuejs.org/config/#head

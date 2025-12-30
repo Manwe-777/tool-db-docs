@@ -1,111 +1,267 @@
-# User data
+# User API
+
+The user API handles authentication and identity management. All user-related operations use the configured user adapter (default: ECDSA).
 
 ## `ToolDb.signUp()`
 
 Type signature:
 
 ```ts
-function signUp(
-  this: ToolDb,
+async function signUp(
   user: string,
   password: string
-): Promise<PutMessage<UserRootData>>
+): Promise<PutMessage<UserRootData>>;
 ```
 
-Creates a new user in the database and adds the namespace link to the username key. Notice the private and public keys for this user will be stored in the database encrypted, using your password as the seed for the decryption key, so if the user loses the password there is no effective way to recover the private keys.
+Creates a new user in the database with the given username and password.
 
+**Parameters:**
+
+- `user` — The username to register
+- `password` — The password for key encryption
+
+**Returns:** A promise resolving to the put message for the user data.
+
+::: warning
+The private keys are stored in the database **encrypted with your password**. If you lose the password, there is no way to recover the private keys. Consider implementing key backup functionality in your application.
+:::
+
+**Example:**
+
+```ts
+try {
+  await db.signUp("alice", "secure-password-123");
+  console.log("User created successfully!");
+} catch (error) {
+  console.error("Sign up failed:", error);
+}
+```
 
 ## `ToolDb.signIn()`
 
 Type signature:
 
 ```ts
-function signIn(
-  this: ToolDb,
-  user: string,
-  password: string
-): Promise<Account | undefined>
-> 
+async function signIn(user: string, password: string): Promise<void>;
 ```
 
-Returns a [Web3.eth](https://web3js.readthedocs.io/en/v1.2.11/web3-eth-accounts.html) account for this user, generated based on the key pair stored under alias `user` and decrypted with `password`. If the alias is not found or the credentials are invalid it returns `undefined` instead.
+Signs in with existing credentials. This retrieves the encrypted keys from the database and decrypts them with the password.
+
+**Parameters:**
+
+- `user` — The username to sign in with
+- `password` — The password to decrypt the keys
+
+**Returns:** A promise that resolves when sign in is complete.
+
+**Example:**
+
+```ts
+try {
+  await db.signIn("alice", "secure-password-123");
+  console.log("Signed in as:", db.userAccount.getUsername());
+  console.log("Address:", db.userAccount.getAddress());
+} catch (error) {
+  console.error("Sign in failed:", error);
+}
+```
 
 ## `ToolDb.anonSignIn()`
 
 Type signature:
 
 ```ts
-function anonSignIn(this: ToolDb): void
+async function anonSignIn(): Promise<void>;
 ```
 
-Creates a new, randomized set of keys and stores them in the database as our current logged in user, assigning a random name too, but without storing any of this into the database itself (an ephemereal user)
+Creates a new, randomized set of keys for anonymous/guest usage. The keys are generated locally but not persisted to the network.
 
-This can be used to use applications as Guest, so users dont have to log in, but can still use parts of it.
+**Returns:** A promise that resolves when the anonymous user is created.
 
-Bear in mind that any user data stored for this user after log in *will be* stored in the database under the public key assigned, and relayed to other peers. So if you log out and you did not save the keys, that data will be be frozen into the peers who stored it.
+::: tip
+Use this for guest access. Users can still write data, which will be stored under their ephemeral public key namespace. If they log out without saving their keys, they won't be able to access that data again.
+:::
+
+**Example:**
+
+```ts
+await db.anonSignIn();
+console.log("Signed in as guest:", db.userAccount.getAddress());
+```
+
+::: warning
+Anonymous sign in works offline, but `signUp` requires network connectivity to check for username conflicts.
+:::
 
 ## `ToolDb.keysSignIn()`
 
 Type signature:
 
 ```ts
-function keysSignIn(
-  this: ToolDb,
+async function keysSignIn(
   privateKey: string,
   username?: string
 ): Promise<{
   signKeys: CryptoKeyPair;
   encryptionKeys: CryptoKeyPair;
-}>
+}>;
 ```
 
-Like sign in, but instead of providing the password you simply pass the private key to the database. You can provide a username too, but its optional.
+Signs in directly with a private key instead of username/password.
 
-You can use this to promt the users to download their keys and use those to log into multiple devices without having to remember their password, or use it as a recovery mechanism as well.
+**Parameters:**
 
+- `privateKey` — The private key in hex format
+- `username` — Optional username to associate (for display purposes)
 
-## `ToolDb.getAddress()`
+**Returns:** A promise resolving to the sign and encryption key pairs.
 
-Type signature:
+**Example:**
 
 ```ts
-function getAddress(): string | undefined
-```
+// User exports their private key
+const privateKey = "0x1234..."; // User's saved private key
 
-Obtain the current logged in user's account adress.
+await db.keysSignIn(privateKey, "alice");
+console.log("Signed in with keys!");
+```
 
 ::: tip
-You can check if you are logged in by checking `client.getAddress() === undefined`
+Use this feature to let users download their keys for backup, or to sign in across multiple devices without remembering passwords.
 :::
 
-## `ToolDb.getUsername()`
+## `ToolDb.userAccount`
 
-Type signature:
+The `userAccount` property provides access to the current user's account adapter.
 
-```ts
-function getUsername(): string | undefined
-```
-
-Obtain the current logged in user's name.
-
-## `ToolDb.encryptAccount()`
-
-Type signature:
+### `userAccount.getAddress()`
 
 ```ts
-function encryptAccount(account: Account, password: string): EncryptedKeystoreV3Json
+function getAddress(): string | undefined;
 ```
 
-Encrypts this account using the web3 standard. This is the same method used internally for signup.
+Returns the current user's public key/address, or `undefined` if not signed in.
 
-## `ToolDb.decryptAccount()`
-
-Type signature:
+**Example:**
 
 ```ts
-function decryptAccount(account: EncryptedKeystoreV3Json, password: string): Account | void
+const address = db.userAccount.getAddress();
+if (address) {
+  console.log("Signed in as:", address);
+} else {
+  console.log("Not signed in");
+}
 ```
 
-Decrypts this account using the web3 standard. This is the same method used internally for ignin. Throws an error if failed, eg: if the password is incorrect.
+### `userAccount.getUsername()`
 
-Please read more about Web3.eth accounts and its utilities [here](https://web3js.readthedocs.io/en/v1.2.11/web3-eth-accounts.html)
+```ts
+function getUsername(): string | undefined;
+```
+
+Returns the current user's username, or `undefined` if not available.
+
+**Example:**
+
+```ts
+const name = db.userAccount.getUsername();
+console.log("Hello,", name || "Anonymous");
+```
+
+### `userAccount.signData()`
+
+```ts
+async function signData(data: string): Promise<string>;
+```
+
+Signs data with the user's private key.
+
+**Example:**
+
+```ts
+const signature = await db.userAccount.signData("message to sign");
+console.log("Signature:", signature);
+```
+
+### `userAccount.verifySignature()`
+
+```ts
+async function verifySignature(
+  message: Partial<VerificationData<any>>
+): Promise<boolean>;
+```
+
+Verifies a message signature.
+
+**Example:**
+
+```ts
+const isValid = await db.userAccount.verifySignature(message);
+if (isValid) {
+  console.log("Signature is valid!");
+}
+```
+
+### `userAccount.encryptAccount()`
+
+```ts
+async function encryptAccount(password: string): Promise<unknown>;
+```
+
+Encrypts the current account with a password for storage.
+
+### `userAccount.decryptAccount()`
+
+```ts
+async function decryptAccount(acc: unknown, password: string): Promise<any>;
+```
+
+Decrypts an encrypted account with the password.
+
+## Authentication Flow
+
+Here's a typical authentication flow:
+
+```ts
+import { ToolDb } from "tool-db";
+import ToolDbWebrtc from "@tool-db/webrtc-network";
+
+const db = new ToolDb({
+  networkAdapter: ToolDbWebrtc,
+  topic: "my-app",
+});
+
+// Wait for initialization
+await db.ready;
+
+// Check if we have a saved user
+if (db.userAccount.getAddress()) {
+  console.log("Welcome back,", db.userAccount.getUsername());
+} else {
+  // New user or guest
+  await db.anonSignIn();
+  console.log("Signed in as guest");
+}
+
+// Later, user wants to create an account
+async function createAccount(username: string, password: string) {
+  try {
+    await db.signUp(username, password);
+    console.log("Account created!");
+  } catch (error) {
+    if (error.message.includes("exists")) {
+      console.log("Username already taken");
+    }
+  }
+}
+
+// Or sign in to existing account
+async function login(username: string, password: string) {
+  try {
+    await db.signIn(username, password);
+    console.log("Welcome,", db.userAccount.getUsername());
+  } catch (error) {
+    console.log("Invalid credentials");
+  }
+}
+```
