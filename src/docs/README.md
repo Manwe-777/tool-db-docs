@@ -6,9 +6,9 @@ data format (events); Tool Db adds what a database needs on top: keys and
 namespaces, CRDTs, custom verification rules, local storage, live
 subscriptions and server functions.
 
-::: warning Not on npm yet
-The packages described here are not published on npm yet; until then, build
-them from the [repository](https://github.com/Manwe-777/tool-db).
+::: tip Installing
+The packages are published on npm under the `next` tag:
+`npm install tool-db@next`.
 :::
 
 ## ✨ Core Features

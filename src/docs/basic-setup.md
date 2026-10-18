@@ -10,21 +10,18 @@ receive, so relays do not need to be trusted.
 ## Installation
 
 ```bash
-npm install tool-db
+npm install tool-db@next
 ```
 
 Then, depending on where your data is kept:
 
 ```bash
-npm install @tool-db/indexeddb-store   # browsers
-npm install @tool-db/leveldb-store     # Node
-npm install @tool-db/nostr-relay       # to run a relay node (Node)
+npm install @tool-db/indexeddb-store@next   # browsers
+npm install @tool-db/leveldb-store@next     # Node
+npm install @tool-db/nostr-relay@next       # to run a relay node (Node)
 ```
 
-::: warning Not on npm yet
-The packages are not published on npm yet; until then, build them from the
-[repository](https://github.com/Manwe-777/tool-db).
-:::
+The packages are published under the `next` tag while they are tested.
 
 ## A relay to connect to
 
