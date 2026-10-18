@@ -12,11 +12,7 @@ signatures, whatever signer its author used.
 | `ToolDbNostrUser`  | In memory (default)      | Servers, bots, apps that manage their keys    |
 | `ToolDbNip07User`  | A browser extension      | Users with their own Nostr identity (NIP-07)  |
 
-::: tip No usernames
-Version 2 had `signUp` and `signIn` with usernames and passwords, which
-published encrypted keys to the network. They are gone: names come from
-[profiles](#profiles), and keys stay with their owner.
-:::
+Names come from [profiles](#profiles), and keys never leave their owner.
 
 ## Local keys (`ToolDbNostrUser`)
 

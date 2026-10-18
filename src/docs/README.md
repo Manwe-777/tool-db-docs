@@ -6,10 +6,9 @@ data format (events); Tool Db adds what a database needs on top: keys and
 namespaces, CRDTs, custom verification rules, local storage, live
 subscriptions and server functions.
 
-::: warning Version 3
-This documentation describes Tool Db 3, the Nostr based version on the
-`main` branch. It is not compatible with Tool Db 2 (the previous peer to
-peer protocol) and is not published on npm yet.
+::: warning Not on npm yet
+The packages described here are not published on npm yet; until then, build
+them from the [repository](https://github.com/Manwe-777/tool-db).
 :::
 
 ## ✨ Core Features

@@ -101,12 +101,6 @@ await db.putData("posts-2026-10", [...]);
 const months = await db.queryKeys("posts-");
 ```
 
-## Frozen namespace
-
-The `==key` "frozen" namespace of version 2 (first writer owns the key
-forever) is removed: timestamps are chosen by the signer, so anyone could
-claim a key by backdating it. For names, use [profiles and NIP-05](./api-user.md#profiles).
-
 ## Namespace Selection Guide
 
 | You want to store...                   | Use                                        |
@@ -117,3 +111,4 @@ claim a key by backdating it. For names, use [profiles and NIP-05](./api-user.md
 | Data some users can change             | Shared key + `onlyAuthors`                 |
 | Data many users add to at the same time| Shared CRDT, with verificators for rules   |
 | Private data                           | Any of the above, [encrypted](./encryption.md) |
+| A user's name                          | Their [profile](./api-user.md#profiles)    |

@@ -4,9 +4,9 @@ Adapters replace parts of the database with other implementations. There
 are two kinds: **storage adapters** (where data is kept) and **user
 adapters** (signers, who holds the key).
 
-::: tip No network adapters
-Version 2 had network adapters (WebSocket, WebRTC, hybrid). Tool Db 3 always
-uses Nostr relays, through the relay pool in the core.
+::: tip Networking
+There are no network adapters: Tool Db always connects through Nostr relays,
+with the relay pool in the core.
 :::
 
 ## Storage Adapters

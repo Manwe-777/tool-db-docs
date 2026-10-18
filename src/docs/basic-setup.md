@@ -21,9 +21,9 @@ npm install @tool-db/leveldb-store     # Node
 npm install @tool-db/nostr-relay       # to run a relay node (Node)
 ```
 
-::: warning Version 3
-Tool Db 3 is not published on npm yet; until then, build the packages from
-the [repository](https://github.com/Manwe-777/tool-db).
+::: warning Not on npm yet
+The packages are not published on npm yet; until then, build them from the
+[repository](https://github.com/Manwe-777/tool-db).
 :::
 
 ## A relay to connect to
