@@ -9,28 +9,37 @@ function putData<T = any>(
   key: string,
   value: T,
   userNamespaced?: boolean
-): Promise<PutMessage<T> | null>;
+): Promise<NostrEvent>;
 ```
 
-Puts data in the database. It can be any type of data (as long as it can be JSON encoded): objects, strings, numbers, booleans, arrays, etc.
+Puts a value on a key. It can be any data that can be JSON encoded: objects,
+strings, numbers, booleans, arrays...
+
+The value is signed with your identity, stored locally, and published to the
+relays.
 
 **Parameters:**
 
-- `key` — The key to store the data at
+- `key` — The key to store the data at (no dots)
 - `value` — The data to store
-- `userNamespaced` — If `true`, the data will be stored under your public key namespace (default: `false`)
+- `userNamespaced` — If `true`, the key belongs to your [namespace](./namespaces.md), only you can write it (default: `false`)
 
-**Returns:** A promise resolving to the message that was relayed (containing the message hash, key, signature, etc), or `null` on failure.
+**Returns:** the signed Nostr event.
 
 **Example:**
 
 ```ts
-// Store public data
+// A shared key
 await db.putData("public-key", { name: "Alice", age: 30 });
 
-// Store private (user-namespaced) data
+// A key only you can write
 await db.putData("my-settings", { theme: "dark" }, true);
 ```
+
+::: tip Last write wins
+Of all the values of a key, the newest one wins. Your own writes always
+replace your previous ones, even within the same second.
+:::
 
 ## `ToolDb.getData()`
 
@@ -44,29 +53,31 @@ function getData<T = any>(
 ): Promise<T | null>;
 ```
 
-Gets the data stored at `key`. If not found locally, it will query connected peers.
+Gets the value of a key, from local data and every connected relay. Every
+event is verified (signature, key, namespace, custom verificators) before it
+is used, and the newest valid value is returned and stored locally.
 
 **Parameters:**
 
-- `key` — The key to retrieve
-- `userNamespaced` — If `true`, includes your public key in the namespace (default: `false`)
-- `timeoutMs` — Maximum time to wait for peer responses (default: `1000`ms)
+- `key` — The key to read; `:pubkey.key` reads another user's namespace
+- `userNamespaced` — If `true`, reads your own namespace (default: `false`)
+- `timeoutMs` — Maximum time to wait for the relays (default: `1000`ms)
 
-**Returns:** A promise resolving to the data, or `null` if not found.
+**Returns:** the value, or `null` if nobody wrote it.
 
 **Example:**
 
 ```ts
 const data = await db.getData<{ name: string }>("public-key");
-console.log(data?.name);
 
-// Get user-namespaced data
+// Your namespace
 const settings = await db.getData("my-settings", true);
+
+// Someone else's namespace
+const theirs = await db.getData(`:${alicePubkey}.my-settings`);
 ```
 
-::: tip
-The first response from any peer will be returned immediately. If more up-to-date data arrives later, it will be stored for subsequent calls.
-:::
+While offline it returns local data right away.
 
 ## `ToolDb.putCrdt()`
 
@@ -77,62 +88,49 @@ function putCrdt<T = any>(
   key: string,
   crdt: BaseCrdt<T, any, any>,
   userNamespaced?: boolean
-): Promise<CrdtPutMessage | null>;
+): Promise<NostrEvent | null>;
 ```
 
-Puts CRDT changes to the database. This sends only the changes from the CRDT, not the full state.
+Publishes the changes you made to a [CRDT](./crdts.md) since your last put,
+as one signed change set. Changes by other authors are only published by
+them.
 
-**Parameters:**
-
-- `key` — The key to store the CRDT at
-- `crdt` — The CRDT instance containing changes
-- `userNamespaced` — If `true`, stores under your public key namespace (default: `false`)
-
-**Example:**
+**Returns:** the change set event, or `null` if there was nothing new.
 
 ```ts
-import { MapCrdt } from "tool-db";
-
-const map = new MapCrdt(db.userAccount.getAddress() || "");
-map.SET("name", "Alice");
-map.SET("age", 30);
-
-await db.putCrdt("my-profile", map, true);
+const doc = new MapCrdt(db.userAccount.getAddress());
+doc.SET("hello", "world");
+await db.putCrdt("shared-doc", doc);
 ```
+
+::: warning Authors
+Create CRDTs with your public key as author; changes by any other author can
+not be signed by you, and are not published.
+:::
 
 ## `ToolDb.getCrdt()`
 
 Type signature:
 
 ```ts
-function getCrdt<T, C extends BaseCrdt<T, any, any>>(
+function getCrdt<T = any>(
   key: string,
-  crdt: C,
+  crdt: BaseCrdt<T, any, any>,
   userNamespaced?: boolean,
   timeoutMs?: number
-): Promise<C>;
+): Promise<NostrCrdtView | null>;
 ```
 
-Gets a CRDT document and merges received changes into the provided CRDT instance.
+Gets every change set of a CRDT document from local data and the relays,
+verifies them, and merges their changes into `crdt`.
 
-**Parameters:**
-
-- `key` — The key to retrieve
-- `crdt` — The CRDT instance to merge changes into
-- `userNamespaced` — If `true`, includes your public key in the namespace (default: `false`)
-- `timeoutMs` — Maximum time to wait for peer responses (default: `1000`ms)
-
-**Returns:** A promise resolving to the CRDT instance with merged changes.
-
-**Example:**
+**Returns:** the document (with all its changes in `v`), or `null` if nobody
+wrote it.
 
 ```ts
-import { MapCrdt } from "tool-db";
-
-const map = new MapCrdt(db.userAccount.getAddress() || "");
-await db.getCrdt("my-profile", map, true);
-
-console.log(map.value); // { name: "Alice", age: 30 }
+const doc = new MapCrdt(db.userAccount.getAddress());
+await db.getCrdt("shared-doc", doc);
+console.log(doc.value);
 ```
 
 ## `ToolDb.queryKeys()`
@@ -141,34 +139,24 @@ Type signature:
 
 ```ts
 function queryKeys(
-  key: string,
+  prefix: string,
   userNamespaced?: boolean,
   timeoutMs?: number
-): Promise<string[] | null>;
+): Promise<string[]>;
 ```
 
-Queries connected peers for all keys starting with `key`.
-
-**Parameters:**
-
-- `key` — The key prefix to search for
-- `userNamespaced` — If `true`, includes your public key in the namespace (default: `false`)
-- `timeoutMs` — Maximum time to wait for peer responses (default: `1000`ms)
-
-**Returns:** A promise resolving to an array of matching keys, or `null` on failure.
-
-**Example:**
+Lists the keys starting with a prefix, from local data and the relays (values
+and CRDTs).
 
 ```ts
-// Find all user profiles
-const profileKeys = await db.queryKeys(":"); // All private namespace keys
-
-// Find all keys in a specific namespace
-const chatKeys = await db.queryKeys("chat-messages-");
+const posts = await db.queryKeys("post-");
+const mine = await db.queryKeys("post-", true);
 ```
 
 ::: tip
-This function returns only the keys, not the data. Use it for indexing before retrieving specific data with `getData()`.
+Nostr relays can not filter by prefix, so this asks for every key of your
+topic and filters locally. Fine for small topics; for large ones, keep lists
+of keys in a value or a CRDT instead.
 :::
 
 ## `ToolDb.subscribeData()`
@@ -176,117 +164,67 @@ This function returns only the keys, not the data. Use it for indexing before re
 Type signature:
 
 ```ts
-function subscribeData(key: string, userNamespaced?: boolean): void;
+function subscribeData(key: string, userNamespaced?: boolean): Promise<void>;
 ```
 
-Subscribes to updates for a specific key. Combined with `addKeyListener()`, this enables real-time data updates.
-
-**Parameters:**
-
-- `key` — The key to subscribe to
-- `userNamespaced` — If `true`, includes your public key in the namespace (default: `false`)
-
-**Example:**
+Keeps a relay subscription for a key: every newer valid value (or CRDT change
+set) is stored and triggers the [key listeners](./api-listeners.md) of the
+key. Listeners also get the local data right away.
 
 ```ts
-// Subscribe to updates
-db.subscribeData("chat-messages");
-
-// Listen for changes
-db.addKeyListener("chat-messages", (msg) => {
-  console.log("New message:", msg.v);
-});
+db.addKeyListener("chat", (msg) => console.log("New value:", msg.v));
+await db.subscribeData("chat");
 ```
 
-## `ToolDb.getUserNamespacedKey()`
+## `ToolDb.unsubscribeData()`
 
-Type signature:
+```ts
+function unsubscribeData(key: string, userNamespaced?: boolean): void;
+```
+
+Closes the relay subscription of a key.
+
+## `ToolDb.getUserNamespacedKey()`
 
 ```ts
 function getUserNamespacedKey(key: string): string;
 ```
 
-Transforms a key to be user-namespaced according to the key specification.
-
-**Example:**
-
-```ts
-const nsKey = db.getUserNamespacedKey("my-data");
-// Returns: ":0x1234...abcd.my-data" (with your public key)
-```
+Returns `:yourPubkey.key`.
 
 ## `ToolDb.doFunction()`
 
 Type signature:
 
 ```ts
-function doFunction<A, R>(
-  functionName: string,
+function doFunction<R = any, A = any>(
+  name: string,
   args: A,
-  timeoutMs?: number
+  options?: { server?: string; timeoutMs?: number }
 ): Promise<FunctionReturn<R>>;
 ```
 
-Executes a server-defined function on a connected server peer.
-
-**Parameters:**
-
-- `functionName` — The name of the server function to call
-- `args` — Arguments to pass to the function
-- `timeoutMs` — Maximum time to wait for response (default: `1000`ms)
-
-**Returns:** A promise resolving to the function result.
-
-**Example:**
+Runs a server function on a [ToolDB relay node](./relay-node.md). The request
+is signed, so the function knows who called it, and only responses signed by
+the servers in the `functionServers` option (or `options.server`) are
+accepted.
 
 ```ts
-const result = await db.doFunction<{ userId: string }, { balance: number }>(
-  "getBalance",
-  { userId: "user123" }
-);
+const result = await db.doFunction("add", { a: 1, b: 2 });
 
 if (result.code === "OK") {
-  console.log("Balance:", result.return.balance);
+  console.log(result.return); // 3
+} else {
+  console.error(result.code, result.return); // "ERR" or "NOT_FOUND"
 }
 ```
 
+If no server answers in time (default `10000`ms), it returns `{ code: "ERR" }`.
+
 ## `ToolDb.ready`
 
-Type signature:
-
-```ts
-get ready(): Promise<void>
-```
-
-A promise that resolves when the database is fully initialized. Use this to wait for initialization before performing operations.
-
-**Example:**
-
-```ts
-const db = new ToolDb({
-  /* options */
-});
-
-// Wait for full initialization
-await db.ready;
-
-// Now safe to use
-await db.anonSignIn();
-```
+A promise resolving when the storage and the signer are ready.
 
 ## `ToolDb.close()`
 
-Type signature:
-
-```ts
-async close(): Promise<void>
-```
-
-Properly closes all stores to prevent resource leaks. Call this when you're done with the database instance.
-
-**Example:**
-
-```ts
-// When shutting down
-await db.close();
-```
+Closes the subscriptions, the relay connections and the storage.

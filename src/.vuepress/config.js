@@ -61,7 +61,7 @@ module.exports = {
         {
           title: "Guides",
           collapsable: false,
-          children: ["basic-setup", "nodejs-dht-discovery", "namespaces", "crdts", "adapters"],
+          children: ["basic-setup", "namespaces", "crdts", "encryption", "relay-node", "adapters", "how-it-works"],
         },
       ],
     },

@@ -1,384 +1,169 @@
 # Types
 
-This page documents the main TypeScript types used throughout Tool Db.
+The main TypeScript types of Tool Db. All of them are exported by `tool-db`.
 
 ## ToolDbOptions
 
-Configuration options for the ToolDb constructor:
+See [the constructor](./constructor.md#options).
+
+## NostrEvent
+
+A signed Nostr event (NIP-01). Values, CRDT change sets, profiles and
+function calls are all Nostr events.
 
 ```ts
-interface ToolDbOptions {
-  debug: boolean;
-  peers: { host: string; port: number }[];
-  maxRetries: number;
-  triggerDebouce: number;
-  wait: number;
-  pow: number | null;
-  server: boolean;
-  httpServer: HTTPServer | HTTPSServer | undefined;
-  host: string;
-  port: number;
-  ssl: boolean;
-  storageName: string;
-  networkAdapter: typeof ToolDbNetworkAdapter;
-  storageAdapter: typeof ToolDbStorageAdapter;
-  userAdapter: typeof ToolDbUserAdapter;
-  topic: string;
-  serverName: string | undefined;
-  modules: { [module: string]: any };
+interface NostrEvent {
+  id: string; // sha256 of the serialized event
+  pubkey: string; // author public key
+  created_at: number; // seconds
+  kind: number;
+  tags: string[][];
+  content: string;
+  sig: string; // Schnorr signature of the id
+}
+
+interface EventTemplate {
+  kind: number;
+  tags: string[][];
+  content: string;
+  created_at: number;
+}
+```
+
+## NostrFilter
+
+A subscription filter (NIP-01), used with `db.relays.query()` and
+`db.relays.subscribe()`.
+
+```ts
+interface NostrFilter {
+  ids?: string[];
+  authors?: string[];
+  kinds?: number[];
+  since?: number;
+  until?: number;
+  limit?: number;
+  [tag: `#${string}`]: string[] | undefined; // like "#d": ["..."]
 }
 ```
 
 ## VerificationData
 
-Data attached to every verified message:
+A verified value or CRDT change set, as listeners and custom verificators get
+it.
 
 ```ts
 interface VerificationData<T = any> {
-  k: string; // Key/id
-  a: string; // Author address (public key)
-  n: number; // Nonce
-  h: string; // Hash of JSON.stringify(value) + nonce
-  t: number; // Timestamp when created
-  s: string; // Signature
-  v: T; // Value/payload
-  c: string | null; // CRDT type (null for regular values)
+  k: string; // key, with the user namespace if any
+  a: string; // author public key
+  t: number; // timestamp, in milliseconds
+  h: string; // event id
+  s: string; // event signature
+  v: T; // value, or the changes of a change set
+  c: string | null; // CRDT type, null for values
 }
 ```
 
 ## VerifyResult
 
-Possible outcomes of message verification:
-
 ```ts
 enum VerifyResult {
-  Verified = "Verified",
-  InvalidData = "InvalidData",
-  InvalidVerification = "InvalidVerification",
-  InvalidSignature = "InvalidSignature",
-  InvalidTimestamp = "InvalidTimestamp",
-  InvalidHashNonce = "InvalidHashNonce",
-  AddressMismatch = "AddressMismatch",
-  CantOverwrite = "CantOverwrite",
-  NoProofOfWork = "NoProofOfWork",
   CustomVerificationFailed = "CustomVerificationFailed",
+  InvalidData = "InvalidData",
+  InvalidTimestamp = "InvalidTimestamp",
+  AddressMismatch = "AddressMismatch",
+  InvalidSignature = "InvalidSignature",
+  Verified = "Verified",
 }
 ```
 
-## BaseMessage
+## NostrCrdtView
 
-Base structure for all network messages:
+A CRDT document, as `getCrdt` returns it and CRDT key listeners get it.
 
 ```ts
-interface BaseMessage {
-  type: MessageType; // Message type identifier
-  id: string; // Unique random ID for acknowledgment
-  to: string[]; // List of peers this was already sent to
+interface NostrCrdtView<C = any> {
+  k: string; // key
+  c: string; // CRDT type: "MAP", "LIST" or "COUNTER"
+  events: NostrEvent[]; // its signed change sets
+  v: C[]; // all their changes
 }
 ```
 
-## MessageType
-
-All supported message types:
+## Profile
 
 ```ts
-type MessageType =
-  | "ping"
-  | "pong"
-  | "put"
-  | "get"
-  | "query"
-  | "queryKeys"
-  | "subscribe"
-  | "crdtGet"
-  | "crdtPut"
-  | "function";
-```
-
-## Peer
-
-Information about a connected peer:
-
-```ts
-interface Peer {
-  topic: string; // Swarm/topic identifier
-  timestamp: number; // When peer info was generated
-  host: string; // Hostname or IP
-  port: number; // Port number
-  address: string; // Peer's public key address
-  sig: string; // Signature proving peer identity
-}
-```
-
-## PutMessage
-
-Message structure for data storage operations:
-
-```ts
-interface PutMessage<T = any> extends BaseMessage {
-  type: "put";
-  data: VerificationData<T>;
-}
-```
-
-## CrdtPutMessage
-
-Message structure for CRDT storage operations:
-
-```ts
-interface CrdtPutMessage extends BaseMessage {
-  type: "crdtPut";
-  data: VerificationData<any[]>;
-}
-```
-
-## GetMessage
-
-Message structure for data retrieval requests:
-
-```ts
-interface GetMessage extends BaseMessage {
-  type: "get";
-  key: string;
-}
-```
-
-## QueryMessage
-
-Message structure for key queries:
-
-```ts
-interface QueryMessage extends BaseMessage {
-  type: "query" | "queryKeys";
-  key: string;
-  keys?: string[];
-}
-```
-
-## SubscribeMessage
-
-Message structure for subscription requests:
-
-```ts
-interface SubscribeMessage extends BaseMessage {
-  type: "subscribe";
-  key: string;
-}
-```
-
-## FunctionMessage
-
-Message structure for server function calls:
-
-```ts
-interface FunctionMessage<A = any> extends BaseMessage {
-  type: "function";
-  name: string;
-  args: A;
+interface Profile {
+  name?: string;
+  display_name?: string;
+  about?: string;
+  picture?: string;
+  nip05?: string;
+  [field: string]: unknown;
 }
 ```
 
 ## FunctionReturn
 
-Response structure from server functions:
-
 ```ts
 type FunctionCodes = "OK" | "ERR" | "NOT_FOUND";
 
-interface FunctionReturnOk<R> {
-  code: "OK";
-  return: R;
-}
-
-interface FunctionReturnErr {
-  code: "ERR";
-  return: string;
-}
-
-interface FunctionReturnNotFound {
-  code: "NOT_FOUND";
-  return: string;
-}
-
 type FunctionReturn<R> =
-  | FunctionReturnOk<R>
-  | FunctionReturnErr
-  | FunctionReturnNotFound;
+  | { code: "OK"; return: R }
+  | { code: "ERR"; return: string }
+  | { code: "NOT_FOUND"; return: string };
 ```
 
 ## ServerFunction
 
-Type for defining server-side functions:
-
 ```ts
 type ServerFunction<R, A = GenericObject> = (
-  args: AllowedFunctionArguments<A>
-) => Promise<AllowedFunctionReturn<R>>;
-```
-
-## Listener
-
-Internal listener structure:
-
-```ts
-interface Listener<T = any> {
-  key: string;
-  timeout: number | null;
-  fn: (msg: VerificationData<T>) => void;
-}
+  args: A,
+  caller: string // public key of whoever called it
+) => Promise<R>;
 ```
 
 ## BaseCrdt
 
-Base class for all CRDT implementations:
-
 ```ts
 class BaseCrdt<T = any, Changes = any, Value = any> {
-  // CRDT type identifier ("MAP", "LIST", "COUNTER", or custom)
-  public type: string;
-
-  // Merge incoming changes into this CRDT
-  public mergeChanges(changes: Changes[]): void;
-
-  // Get all changes from this CRDT
-  public getChanges(): Changes[];
-
-  // Get the computed value
+  type: string;
+  mergeChanges(changes: Changes[]): void;
+  getChanges(): Changes[];
   get value(): Value;
 }
 ```
 
 ## MapChanges
 
-Change types for MapCRDT:
-
 ```ts
-type MapOperations = "SET" | "DEL";
-
-interface ChangeMapBase<T> {
-  t: MapOperations; // Operation type
-  a: string; // Author address
-  k: string; // Key
-  i: number; // Index/version
-}
-
-interface SetMapChange<T> extends ChangeMapBase<T> {
-  t: "SET";
-  v: T; // Value
-}
-
-interface DelMapChange<T> extends ChangeMapBase<T> {
-  t: "DEL";
-}
-
-type MapChanges<T> = SetMapChange<T> | DelMapChange<T>;
+type MapChanges<T> =
+  | { t: "SET"; a: string; k: string; i: number; v: T }
+  | { t: "DEL"; a: string; k: string; i: number };
 ```
 
 ## ListChanges
 
-Change types for ListCRDT:
-
 ```ts
-type ListOperations = "INS" | "DEL";
-
-interface ChangeListBase<T> {
-  t: ListOperations; // Operation type
-  i: string; // Unique index (author + sequence)
-}
-
-interface InsListChange<T> extends ChangeListBase<T> {
-  t: "INS";
-  v: T; // Value
-  p: string | undefined; // Previous item index
-  n: string | undefined; // Next item index
-}
-
-interface DelListChange<T> extends ChangeListBase<T> {
-  t: "DEL";
-  v: string; // Target index to tombstone
-}
-
-type ListChanges<T> = InsListChange<T> | DelListChange<T>;
+type ListChanges<T> =
+  | { t: "INS"; i: string; v: T; p?: string; n?: string } // i: "author-sequence"
+  | { t: "DEL"; i: string; v: string }; // v: index of the item to delete
 ```
 
 ## CounterChanges
 
-Change types for CounterCRDT:
-
 ```ts
-type CounterOperations = "ADD" | "SUB";
-
-interface ChangeCounterBase {
-  t: CounterOperations; // Operation type
-  v: number; // Value
-  a: string; // Author address
-  i: number; // Index/sequence
-}
-
-interface AddCounterChange extends ChangeCounterBase {
-  t: "ADD";
-}
-
-interface SubCounterChange extends ChangeCounterBase {
-  t: "SUB";
-}
-
-type CounterChanges = AddCounterChange | SubCounterChange;
+type CounterChanges =
+  | { t: "ADD"; a: string; i: number; v: number }
+  | { t: "SUB"; a: string; i: number; v: number };
 ```
 
-## PingMessage
+## Event kinds
 
-Message for initial peer handshake:
-
-```ts
-interface PingMessage extends BaseMessage {
-  type: "ping";
-  clientId: string;
-  isServer: boolean;
-  peer: Peer;
-}
-```
-
-## PongMessage
-
-Response to ping message:
-
-```ts
-interface PongMessage extends BaseMessage {
-  type: "pong";
-  clientId: string;
-  isServer: boolean;
-  servers: Peer[];
-}
-```
-
-## ToolDbMessage
-
-Union of all message types:
-
-```ts
-type ToolDbMessage =
-  | PingMessage
-  | PongMessage
-  | PutMessage
-  | GetMessage
-  | QueryMessage
-  | SubscribeMessage
-  | CrdtPutMessage
-  | FunctionMessage;
-```
-
-## Utility Types
-
-```ts
-type GenericObject = { [key: string]: any };
-
-type AllowedFunctionArguments<A = GenericObject> = A;
-
-type AllowedFunctionReturn<R = unknown> = R;
-
-type ToolDbMessageHandler = (
-  message: ToolDbMessage,
-  remotePeerId: string
-) => void;
-```
+| Constant                 | Kind    | Content                                        |
+| ------------------------ | ------- | ---------------------------------------------- |
+| `VALUE_KIND`             | `30078` | Values (NIP-78 application data, addressable) |
+| `CRDT_EVENT_KIND`        | `1078`  | CRDT change sets (regular events)             |
+| `PROFILE_KIND`           | `0`     | Profiles (NIP-01)                             |
+| `FUNCTION_REQUEST_KIND`  | `21078` | Server function requests (ephemeral)          |
+| `FUNCTION_RESPONSE_KIND` | `21079` | Server function responses (ephemeral)         |

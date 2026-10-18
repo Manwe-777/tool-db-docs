@@ -2,322 +2,171 @@
 
 ## Basic Usage
 
-Create a new Tool Db instance by calling the constructor with options:
-
 ```ts
 import { ToolDb } from "tool-db";
 
 const db = new ToolDb({
+  relays: ["wss://relay.example.com"],
   topic: "my-app",
-  debug: true,
 });
 
-// Wait for initialization before using
 await db.ready;
 ```
 
-## Options
+Every option is optional. Without relays the database works offline, with
+local data only.
 
-All options are optional and have sensible defaults:
+## Options
 
 ```ts
 interface ToolDbOptions {
-  // Show debug console logs (default: false)
   debug: boolean;
-
-  // Array of peers to connect to on startup
-  peers: { host: string; port: number }[];
-
-  // Max number of connection retry attempts (default: 5)
-  maxRetries: number;
-
-  // Debounce time for key listener callbacks in ms (default: 100)
-  triggerDebouce: number;
-
-  // Time to wait between connection retries in ms (default: 2000)
-  wait: number;
-
-  // Proof of Work difficulty (leading zeroes required)
-  // Set to 0 for no POW, null to bypass POW entirely (useful for testing)
-  pow: number | null;
-
-  // Whether this node is a server/relay (default: false)
-  server: boolean;
-
-  // Hostname for server mode (default: "127.0.0.1")
-  host: string;
-
-  // Port for server mode (default: 8080)
-  port: number;
-
-  // Whether using SSL/TLS (default: false)
-  ssl: boolean;
-
-  // HTTP/HTTPS server instance for WebSocket upgrade (server only)
-  httpServer: HTTPServer | HTTPSServer | undefined;
-
-  // Storage namespace/database name (default: "tooldb")
-  storageName: string;
-
-  // Network adapter class
-  networkAdapter: typeof ToolDbNetworkAdapter;
-
-  // Storage adapter class
-  storageAdapter: typeof ToolDbStorageAdapter;
-
-  // User authentication adapter class
-  userAdapter: typeof ToolDbUserAdapter;
-
-  // Topic/swarm identifier for peer discovery (default: "tool-db-default")
+  relays: string[];
   topic: string;
-
-  // Server name (like a domain identifier)
-  serverName: string | undefined;
-
-  // Module-specific options
-  modules: {
-    [module: string]: any;
-  };
+  functionServers: string[];
+  triggerDebouce: number;
+  storageName: string;
+  storageAdapter: typeof ToolDbStorageAdapter;
+  userAdapter: typeof ToolDbUserAdapter;
+  WebSocket: WebSocketConstructor | undefined;
 }
 ```
 
+| Option            | Default             | Description                                                                                  |
+| ----------------- | ------------------- | -------------------------------------------------------------------------------------------- |
+| `relays`          | `[]`                | Nostr relays to connect to                                                                   |
+| `topic`           | `"tool-db-default"` | The namespace of your app. Apps sharing relays only see the keys of their own topic          |
+| `functionServers` | `[]`                | Public keys of the [relay nodes](./relay-node.md) trusted to run server functions            |
+| `storageAdapter`  | `ToolDbMemoryStore` | Local storage. In memory by default, use LevelDB (Node) or IndexedDB (browsers) to keep data |
+| `storageName`     | `"tooldb"`          | Name of the local storage (folder, database name...)                                         |
+| `userAdapter`     | `ToolDbNostrUser`   | The signer of your identity: a local Nostr key by default, see [Identity](./api-user.md)     |
+| `WebSocket`       | global `WebSocket`  | WebSocket implementation, for runtimes without a global one                                  |
+| `triggerDebouce`  | `100`               | Milliseconds key listeners wait before firing, to group quick updates                        |
+| `debug`           | `false`             | Log what the database does                                                                   |
+
 ## Configuration Examples
 
-### Minimal Browser Client
+### Browser app
 
 ```ts
 import { ToolDb } from "tool-db";
-import ToolDbWebrtc from "@tool-db/webrtc-network";
+import { ToolDbIndexedDb } from "@tool-db/indexeddb-store";
 
 const db = new ToolDb({
-  networkAdapter: ToolDbWebrtc,
+  relays: ["wss://relay.example.com", "wss://relay2.example.com"],
   topic: "my-app",
+  storageAdapter: ToolDbIndexedDb,
+  storageName: "my-app",
 });
 ```
 
-### Server Node
+### Node client
 
 ```ts
 import { ToolDb } from "tool-db";
-import ToolDbWebsocket from "@tool-db/websocket-network";
-import ToolDbLeveldb from "@tool-db/leveldb-store";
+import { ToolDbLeveldb } from "@tool-db/leveldb-store";
 
 const db = new ToolDb({
-  networkAdapter: ToolDbWebsocket,
+  relays: ["ws://127.0.0.1:8080"],
+  topic: "my-app",
   storageAdapter: ToolDbLeveldb,
-  server: true,
-  host: "my-server.com",
-  port: 9000,
-  ssl: true,
-  topic: "my-app",
+  storageName: "./data",
 });
+
+// Sign in with an existing key, instead of a new random one
+await db.keysSignIn(process.env.NOSTR_SECRET_KEY!, "my-bot");
 ```
 
-### Client with Specific Peers
+### With a browser extension
+
+```ts
+import { ToolDb, ToolDbNip07User } from "tool-db";
+
+const db = new ToolDb({
+  relays: ["wss://relay.example.com"],
+  topic: "my-app",
+  userAdapter: ToolDbNip07User,
+});
+
+// Rejects if there is no Nostr extension
+await db.ready;
+```
+
+### With server functions
 
 ```ts
 const db = new ToolDb({
-  peers: [
-    { host: "server1.example.com", port: 9000 },
-    { host: "server2.example.com", port: 9000 },
-  ],
+  relays: ["wss://my-node.example.com"],
   topic: "my-app",
-});
-```
-
-### With Express Server
-
-```ts
-import express from "express";
-import { createServer } from "http";
-import { ToolDb } from "tool-db";
-import ToolDbWebsocket from "@tool-db/websocket-network";
-
-const app = express();
-const httpServer = createServer(app);
-
-const db = new ToolDb({
-  networkAdapter: ToolDbWebsocket,
-  server: true,
-  httpServer: httpServer,
-  port: 9000,
-  topic: "my-app",
+  functionServers: ["<public key of the relay node>"],
 });
 
-httpServer.listen(9000);
+const result = await db.doFunction("add", { a: 1, b: 2 });
 ```
 
-### With Custom Adapters
-
-```ts
-import { ToolDb } from "tool-db";
-import CustomNetwork from "./my-network-adapter";
-import CustomStorage from "./my-storage-adapter";
-import CustomUser from "./my-user-adapter";
-
-const db = new ToolDb({
-  networkAdapter: CustomNetwork,
-  storageAdapter: CustomStorage,
-  userAdapter: CustomUser,
-  topic: "my-app",
-});
-```
+::: tip Servers
+A Tool Db server is a [ToolDB relay node](./relay-node.md), from the
+`@tool-db/nostr-relay` package. `ToolDb` itself is always a client.
+:::
 
 ## Properties
 
 ### `db.ready`
 
-A promise that resolves when the database is fully initialized:
-
-```ts
-const db = new ToolDb({ topic: "my-app" });
-
-// Always await ready before using the database
-await db.ready;
-
-// Now safe to use
-await db.anonSignIn();
-```
+A promise resolving when the storage and the signer are ready. It rejects if
+they can not start, for example `ToolDbNip07User` without an extension.
 
 ### `db.isConnected`
 
-Boolean indicating if connected to at least one peer:
-
-```ts
-if (db.isConnected) {
-  console.log("Online");
-} else {
-  console.log("Offline");
-}
-```
+`true` while connected to at least one relay.
 
 ### `db.options`
 
-Access the current options:
+The options in use, with the defaults filled in.
 
-```ts
-console.log("Topic:", db.options.topic);
-console.log("Is server:", db.options.server);
-```
+### `db.relays`
 
-### `db.network`
-
-Access the network adapter instance:
-
-```ts
-// Send to all connected peers
-db.network.sendToAll(message);
-
-// Check if a specific peer is connected
-if (db.network.isConnected(peerId)) {
-  db.network.sendToClientId(peerId, message);
-}
-```
+The relay pool (`RelayPool`): `publish(event)`, `query(filters)`,
+`subscribe(filters, onEvent)` and `connected` (number of connected relays).
+Use it to work with raw Nostr events.
 
 ### `db.store`
 
-Access the storage adapter instance:
-
-```ts
-// Direct storage access (usually not needed)
-await db.store.put("key", JSON.stringify(data));
-const raw = await db.store.get("key");
-```
+The local storage adapter.
 
 ### `db.userAccount`
 
-Access the current user's account adapter:
-
-```ts
-const address = db.userAccount.getAddress();
-const name = db.userAccount.getUsername();
-```
-
-### `db.peerAccount`
-
-Access the peer's identity (separate from user account):
-
-```ts
-const peerAddress = db.peerAccount.getAddress();
-```
+The signer of your identity. See [Identity](./api-user.md).
 
 ## Event Callbacks
 
 ### `db.onConnect`
 
-Called when first connected to any peer:
+Called when the first relay connects.
 
 ```ts
-db.onConnect = () => {
-  console.log("Connected to network!");
-  showOnlineStatus();
-};
+db.onConnect = () => console.log("Online");
 ```
 
 ### `db.onDisconnect`
 
-Called when disconnected from all peers:
+Called when no relay is connected anymore. Data keeps being stored locally,
+and relays reconnect with backoff.
 
-```ts
-db.onDisconnect = () => {
-  console.log("Disconnected from network");
-  showOfflineStatus();
-};
-```
+## Events
 
-### `db.onPeerConnect`
+`ToolDb` is an `EventEmitter`:
 
-Called for each individual peer connection:
-
-```ts
-db.onPeerConnect = (peerId: string) => {
-  console.log("New peer:", peerId);
-  updatePeerCount();
-};
-```
-
-### `db.onPeerDisconnect`
-
-Called when a peer disconnects:
-
-```ts
-db.onPeerDisconnect = (peerId: string) => {
-  console.log("Peer left:", peerId);
-  updatePeerCount();
-};
-```
+- `init` — when ready, with our public key
+- `data` — every time new verified data is stored: a record for values, a
+  view with all the changes for CRDTs (see [Listeners](./api-listeners.md))
 
 ## Methods
 
 ### `db.close()`
 
-Properly closes all resources:
+Closes the subscriptions, the relay connections and the storage.
 
 ```ts
-// Always close when done
 await db.close();
 ```
-
-## Server Functions
-
-Define custom server-side functions that clients can call:
-
-```ts
-// On server
-db.addServerFunction("calculateTotal", async (args: { items: number[] }) => {
-  return args.items.reduce((sum, n) => sum + n, 0);
-});
-
-// On client
-const result = await db.doFunction("calculateTotal", {
-  items: [1, 2, 3, 4, 5],
-});
-
-if (result.code === "OK") {
-  console.log("Total:", result.return); // 15
-}
-```
-
-::: tip
-Server functions execute on the server peer, allowing clients to request complex operations without overloading the network. Implement proper security checks within your functions!
-:::

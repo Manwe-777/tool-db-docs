@@ -2,11 +2,10 @@
 
 ## Introduction
 
-Ideally you want your dApp to work without any central servers. However, to start seeding data across multiple peers, you'll need at least one static peer where others can connect in case no other peer is online. This creates a paradigm where users should deploy some servers to bootstrap a decentralized network.
-
-Tool Db helps by providing the same API across both clients and servers, making them both just "nodes" in the network.
-
-You can also have your "server" peers be more powerful, static nodes and have "clients" find them via DHT. This creates a federated structure that is decentralized, scalable, and fault-tolerant.
+A Tool Db app is made of **clients** (browsers or Node) that read and write
+data through **Nostr relays**. You can use public Nostr relays, run your own
+[ToolDB relay node](./relay-node.md), or both. Clients verify everything they
+receive, so relays do not need to be trusted.
 
 ## Installation
 
@@ -14,260 +13,145 @@ You can also have your "server" peers be more powerful, static nodes and have "c
 npm install tool-db
 ```
 
-For specific adapters, install them separately:
+Then, depending on where your data is kept:
 
 ```bash
-# Network adapters
-npm install @tool-db/websocket-network
-npm install @tool-db/webrtc-network
-
-# Storage adapters
-npm install @tool-db/leveldb-store   # Node.js
-npm install @tool-db/indexeddb-store # Browser
-
-# User adapters
-npm install @tool-db/ecdsa-user      # Default ECDSA
-npm install @tool-db/web3-user       # Ethereum wallet
+npm install @tool-db/indexeddb-store   # browsers
+npm install @tool-db/leveldb-store     # Node
+npm install @tool-db/nostr-relay       # to run a relay node (Node)
 ```
 
-## Basic Server Setup
+::: warning Version 3
+Tool Db 3 is not published on npm yet; until then, build the packages from
+the [repository](https://github.com/Manwe-777/tool-db).
+:::
 
-To start a server peer in Node.js:
+## A relay to connect to
+
+For development, run a ToolDB relay node:
 
 ```ts
-import { ToolDb } from "tool-db";
-import ToolDbWebsocket from "@tool-db/websocket-network";
-import ToolDbLeveldb from "@tool-db/leveldb-store";
-import EcdsaUser from "@tool-db/ecdsa-user";
+// relay.mjs
+import { ToolDbRelay } from "@tool-db/nostr-relay";
 
-const server = new ToolDb({
-  networkAdapter: ToolDbWebsocket,
-  storageAdapter: ToolDbLeveldb,
-  userAdapter: EcdsaUser,
-  server: true,
-  host: "localhost",
-  port: 9000,
-  topic: "my-app",
-});
-
-// Wait for initialization
-await server.ready;
-console.log("Server running on port 9000");
+const relay = new ToolDbRelay({ topic: "my-app", port: 8080 });
+await relay.start();
+console.log(relay.url); // ws://127.0.0.1:8080
 ```
 
-::: tip
-Server peers immediately replicate all data they receive throughout the network. Only use `server: true` on nodes with sufficient storage, as they will store all data from the network.
-:::
+Any other Nostr relay works too, like `wss://relay.damus.io` or
+`wss://nos.lol`.
 
 ## Basic Client Setup
 
-For clients connecting to a server:
-
 ```ts
 import { ToolDb } from "tool-db";
-import ToolDbWebsocket from "@tool-db/websocket-network";
-import ToolDbIndexeddb from "@tool-db/indexeddb-store";
-import EcdsaUser from "@tool-db/ecdsa-user";
-
-const client = new ToolDb({
-  networkAdapter: ToolDbWebsocket,
-  storageAdapter: ToolDbIndexeddb,
-  userAdapter: EcdsaUser,
-  peers: [{ host: "localhost", port: 9000 }],
-  topic: "my-app",
-});
-
-await client.ready;
-```
-
-## Browser Setup with WebRTC
-
-For browser-to-browser connections without a server:
-
-```ts
-import { ToolDb } from "tool-db";
-import ToolDbWebrtc from "@tool-db/webrtc-network";
-import ToolDbIndexeddb from "@tool-db/indexeddb-store";
-import EcdsaUser from "@tool-db/ecdsa-user";
+import { ToolDbIndexedDb } from "@tool-db/indexeddb-store";
 
 const db = new ToolDb({
-  networkAdapter: ToolDbWebrtc,
-  storageAdapter: ToolDbIndexeddb,
-  userAdapter: EcdsaUser,
+  relays: ["ws://127.0.0.1:8080"],
   topic: "my-app",
-  debug: true,
+  storageAdapter: ToolDbIndexedDb,
 });
 
 await db.ready;
 ```
 
-## Using via CDN
+The `topic` is the namespace of your app: apps sharing relays only see their
+own keys.
 
-For HTML without a bundler:
+## Identity
 
-```html
-<script src="https://unpkg.com/tool-db/bundle.js"></script>
-<script>
-const { ToolDb, sha256 } = tooldb;
-
-const db = new ToolDb({
-  topic: "my-app",
-});
-
-db.ready.then(() => {
-  console.log("Database ready!");
-});
-</script>
-```
-
-## User Authentication
-
-Before writing data, you need to authenticate. This creates or retrieves your cryptographic keys:
+A new database has a new random Nostr identity:
 
 ```ts
-// Anonymous sign in (for guests)
-await db.anonSignIn();
-console.log("Guest address:", db.userAccount.getAddress());
+console.log(db.userAccount.getAddress()); // hex public key
 ```
 
-::: warning
-Anonymous sign in works offline, but `signUp()` requires network connectivity to check for username conflicts.
-:::
-
-For persistent accounts:
+Sign in with an existing key, or use the user's browser extension:
 
 ```ts
-// Sign up new user
-try {
-  await db.signUp("username", "password");
-  console.log("Account created!");
-} catch (e) {
-  console.error("Username may already exist");
-}
+await db.keysSignIn("nsec1...");
 
-// Sign in existing user
-await db.signIn("username", "password");
-console.log("Welcome,", db.userAccount.getUsername());
+// or
+new ToolDb({ relays, topic: "my-app", userAdapter: ToolDbNip07User });
 ```
+
+See [Identity](./api-user.md) to save keys with a password, and for profiles.
 
 ## Storing Data
 
-Once authenticated, you can store data:
-
 ```ts
-// Store public data
-await db.putData("my-key", { hello: "world" });
-console.log("Data stored!");
+// A shared key, anyone can write it
+await db.putData("greeting", "Hello world!");
 
-// Store user-namespaced (private) data
-await db.putData("settings", { theme: "dark" }, true);
+// A key in your namespace, only you can write it
+await db.putData("profile-settings", { theme: "dark" }, true);
 ```
 
 ## Retrieving Data
 
 ```ts
-// Get public data
-const data = await db.getData("my-key");
-console.log(data); // { hello: "world" }
+const greeting = await db.getData<string>("greeting");
 
-// Get user-namespaced data
-const settings = await db.getData("settings", true);
-console.log(settings); // { theme: "dark" }
+// Your namespace
+const settings = await db.getData("profile-settings", true);
+
+// Someone else's namespace
+const theirs = await db.getData(`:${otherPubkey}.profile-settings`);
 ```
 
 ## Real-time Updates
 
-Subscribe to changes with key listeners:
-
 ```ts
-// Add a listener for a specific key
-const listenerId = db.addKeyListener("chat-messages", (msg) => {
-  if (msg.type === "put") {
-    console.log("New message:", msg.v);
-  }
+db.addKeyListener<string>("greeting", (msg) => {
+  console.log(`${msg.a} says ${msg.v}`);
 });
-
-// Subscribe to receive updates from peers
-db.subscribeData("chat-messages");
-
-// Later, remove the listener
-db.removeKeyListener(listenerId);
-```
-
-## Complete Example
-
-Here's a full working example:
-
-```ts
-import { ToolDb } from "tool-db";
-import ToolDbWebrtc from "@tool-db/webrtc-network";
-import ToolDbIndexeddb from "@tool-db/indexeddb-store";
-import EcdsaUser from "@tool-db/ecdsa-user";
-
-async function main() {
-  // Create database instance
-  const db = new ToolDb({
-    networkAdapter: ToolDbWebrtc,
-    storageAdapter: ToolDbIndexeddb,
-    userAdapter: EcdsaUser,
-    topic: "my-chat-app",
-    debug: true,
-  });
-
-  // Wait for initialization
-  await db.ready;
-
-  // Sign in anonymously
-  await db.anonSignIn();
-  console.log("Signed in as:", db.userAccount.getAddress());
-
-  // Subscribe to chat messages
-  db.addKeyListener("chat-", (msg) => {
-    console.log("Message received:", msg.v);
-  });
-
-  // Send a message
-  await db.putData("chat-" + Date.now(), {
-    from: db.userAccount.getAddress(),
-    text: "Hello, world!",
-    timestamp: Date.now(),
-  });
-
-  console.log("Message sent!");
-}
-
-main().catch(console.error);
+await db.subscribeData("greeting");
 ```
 
 ## Connection Events
 
-Monitor connection status:
+```ts
+db.onConnect = () => console.log("Connected to a relay");
+db.onDisconnect = () => console.log("Offline, data is kept locally");
+```
+
+## Using a bundle
+
+The `tool-db` package includes a browser bundle that exposes everything in
+`tooldb`:
+
+```html
+<script src="https://unpkg.com/tool-db/bundle.js"></script>
+<script>
+  const { ToolDb } = tooldb;
+  const db = new ToolDb({ relays: ["wss://relay.example.com"], topic: "my-app" });
+</script>
+```
+
+## Complete Example
+
+A shared counter of visits, where every visitor can add to the count:
 
 ```ts
-// Called when first connected to any peer
-db.onConnect = () => {
-  console.log("Connected to network!");
-};
+import { ToolDb, CounterCrdt } from "tool-db";
 
-// Called when disconnected from all peers
-db.onDisconnect = () => {
-  console.log("Disconnected from network");
-};
+const db = new ToolDb({ relays: ["ws://127.0.0.1:8080"], topic: "my-app" });
+await db.ready;
 
-// Called for each peer connection
-db.onPeerConnect = (peerId: string) => {
-  console.log("Connected to peer:", peerId);
-};
+const visits = new CounterCrdt(db.userAccount.getAddress());
+await db.getCrdt("visits", visits);
+visits.ADD(1);
+await db.putCrdt("visits", visits);
 
-// Called for each peer disconnection
-db.onPeerDisconnect = (peerId: string) => {
-  console.log("Disconnected from peer:", peerId);
-};
+console.log(`${visits.value} visits`);
 ```
 
 ## Next Steps
 
-- Learn about [CRDTs](crdts.md) for conflict-free collaborative data
-- Explore [Namespaces](namespaces.md) for data organization
-- Set up [DHT Discovery](nodejs-dht-discovery.md) for serverless peer discovery
-- Check the [Constructor Options](constructor.md) for all configuration options
+- [Namespaces](./namespaces.md) — who can write which keys
+- [CRDTs](./crdts.md) — shared documents with many authors
+- [Encryption](./encryption.md) — private data and groups
+- [Relay nodes](./relay-node.md) — your own server, with server functions
+- [The example chat app](https://github.com/Manwe-777/tool-db/tree/main/example)

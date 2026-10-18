@@ -1,56 +1,71 @@
 # Introduction
 
-Tool Db is a peer-to-peer database inspired by GunDB, combining powerful concepts into one cohesive solution for decentralized applications. It can be deployed with minimal setup to create resilient, independent and scalable storage, with no blockchains involved.
+Tool Db is a database layer on top of [Nostr](https://nostr.com). Nostr
+provides the network (relays), the identity (keys and signers) and the signed
+data format (events); Tool Db adds what a database needs on top: keys and
+namespaces, CRDTs, custom verification rules, local storage, live
+subscriptions and server functions.
+
+::: warning Version 3
+This documentation describes Tool Db 3, the Nostr based version on the
+`main` branch. It is not compatible with Tool Db 2 (the previous peer to
+peer protocol) and is not published on npm yet.
+:::
 
 ## ✨ Core Features
 
-- **🔐 Cryptographically Secure** — Public/private key authentication with signature verification
-- **📴 Offline First** — Works without connectivity, syncs when reconnected
-- **🌐 Fully Decentralized** — Federated server mesh with no central point of failure
-- **⚡ Real-time Updates** — Subscribe to live data changes across the network
-- **📦 Key-Value Storage** — Document-based data model with flexible namespaces
-- **🔄 Built-in CRDTs** — Conflict-free replicated data types for automatic conflict resolution
+- **🔐 Signed data** — every value and CRDT change is signed by its author
+  and verified by every reader
+- **🌐 Nostr native** — Nostr identities (local keys, browser extensions),
+  events and relays
+- **📴 Offline First** — data is stored locally and synced with relays
+- **⚡ Real-time Updates** — subscribe to keys and get changes live
+- **📦 Key-Value Storage** — shared keys and user namespaces
+- **🔄 Built-in CRDTs** — maps, lists and counters with provable authors
+- **🔒 Encryption** — NIP-44 encryption between users and for groups
 
 ## 🏗️ Architecture
 
-Tool Db embraces **federated servers** — a P2P mesh network where servers join a swarm and manage connections and data sharing, while clients connect to push and receive updates.
+```
+ browser / node client            relays                   ToolDB relay node
+ ┌──────────────────┐        ┌─────────────────┐        ┌──────────────────────┐
+ │ ToolDB API       │  WS    │ public Nostr    │        │ Nostr relay          │
+ │ verification     │◄──────►│ relays          │        │ + ToolDB validation  │
+ │ local storage    │        └─────────────────┘        │ + storage adapter    │
+ │ signer (keys)    │◄─────────────────────────────────►│ + server functions   │
+ └──────────────────┘                  WS               └──────────────────────┘
+```
 
-> **This is not a requirement!** Any peer can connect to any other peer through WebSockets, and WebRTC connections between web peers are fully supported.
+- **Clients** (browsers or Node) publish to every relay they are connected
+  to, and read from all of them.
+- **Relays are not trusted**: clients verify everything they receive, so any
+  Nostr relay can be used. A malicious relay can hide data, but not forge it.
+- **ToolDB relay nodes** are Nostr relays that also validate, store and serve
+  your app's data, and run server functions. To clients they are just more
+  relays.
 
-Since anyone can join a federated server swarm, we use **cryptographic validation** (public/private key authentication and signature verification) to ensure all messages come from their real authors. All verification information is stored on each message — no centralized database needed!
+## 📦 Packages
 
-## 📦 Monorepo Packages
-
-Tool Db is organized as a monorepo with separate packages for modularity:
-
-| Package             | Description                                                  |
-| ------------------- | ------------------------------------------------------------ |
-| `tool-db`           | Core database functionality and API                          |
-| `ecdsa-user`        | ECDSA-based user authentication and cryptographic operations |
-| `web3-user`         | Web3/Ethereum wallet-based user authentication               |
-| `leveldb-store`     | LevelDB storage adapter for Node.js                          |
-| `indexeddb-store`   | IndexedDB storage adapter for browsers                       |
-| `redis-store`       | Redis storage adapter for server deployments                 |
-| `websocket-network` | WebSocket network adapter                                    |
-| `webrtc-network`    | WebRTC network adapter for browser-to-browser connections    |
-| `hybrid-network`    | Hybrid network adapter combining multiple transports         |
+| Package                    | Description                                                        |
+| -------------------------- | ------------------------------------------------------------------ |
+| `tool-db`                  | The database: identity, relay pool, values, CRDTs, encryption      |
+| `@tool-db/nostr-relay`     | Nostr relay and ToolDB relay node (validation, storage, functions) |
+| `@tool-db/leveldb-store`   | LevelDB storage adapter for Node                                   |
+| `@tool-db/indexeddb-store` | IndexedDB storage adapter for browsers                             |
+| `@tool-db/redis-store`     | Redis storage adapter for Node                                     |
 
 ## Language and Compatibility
 
-The entire library is written in **TypeScript** for code readability and type safety. The code snippets in this documentation use TypeScript, but they can easily be converted to JavaScript.
+Tool Db is written in **TypeScript**; the snippets in this documentation use
+TypeScript, but work as JavaScript too.
 
-### Browser Compatibility
+- **Node.js 22+**, which has a global `WebSocket`
+- **Browsers**: any modern browser. The core has no Node built ins and only
+  pure JS dependencies (`@noble`, `@scure/base`, `events`), so the same code
+  runs on Node and in browsers.
 
-If you're using JavaScript directly in the browser, you don't need to worry about transpilation. However, some crypto modules require modern browsers:
+## 🔗 Related
 
-- [Web Cryptography API browser support](https://caniuse.com/cryptography)
-
-### Node.js Requirements
-
-- **Node.js >= 16.0.0** (required for crypto module support)
-
-## 🔗 Related Projects
-
-- 📦 [chain-swarm](https://github.com/Manwe-777/chain-swarm) — Federated server implementation
-- 🔍 [discovery-channel](https://www.npmjs.com/package/discovery-channel) — DHT peer discovery
-- 💬 [tool-db-chat-example](https://github.com/Manwe-777/tool-db-chat-example) — Live chat demo using WebRTC
+- 💬 [Example chat app](https://github.com/Manwe-777/tool-db/tree/main/example) — encrypted group chat
+- 📐 [Design document](https://github.com/Manwe-777/tool-db/blob/main/NOSTR_FIRST.md) — how Tool Db maps to Nostr
+- 🟣 [Nostr NIPs](https://github.com/nostr-protocol/nips) — the Nostr specifications

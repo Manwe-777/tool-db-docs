@@ -1,14 +1,11 @@
 # Listeners API
 
-Listeners allow you to react to data changes in real-time. Tool Db provides several types of listeners for different use cases.
+Listeners let you react to data changes in real time, and custom verificators
+let you add your own rules to what data is accepted.
 
 ## Key Listeners
 
-Key listeners trigger when data changes for keys matching a prefix.
-
 ### `ToolDb.addKeyListener()`
-
-Type signature:
 
 ```ts
 function addKeyListener<T>(
@@ -17,308 +14,149 @@ function addKeyListener<T>(
 ): number;
 ```
 
-Creates a listener for all keys that start with `key`. Returns a listener ID for later removal.
+Calls `fn` every time new verified data is stored for `key`, whether you wrote
+it or it came from a relay. Use the full key (`:pubkey.key` for user
+namespaces). Returns an id to remove the listener.
 
-**Parameters:**
-
-- `key` — The key prefix to listen for
-- `fn` — Callback function receiving the full message data
-
-**Returns:** A number ID to remove the listener later.
-
-**Example:**
+Listeners are debounced (`triggerDebouce` option, 100ms by default), so quick
+updates trigger them once.
 
 ```ts
-// Listen for all chat messages
-const listenerId = db.addKeyListener("chat-", (msg) => {
-  console.log("New message from:", msg.a);
-  console.log("Content:", msg.v);
-  console.log("Timestamp:", msg.t);
+const id = db.addKeyListener<string>("chat", (msg) => {
+  console.log(`${msg.a} wrote ${msg.v}`);
 });
 
-// Listen for a specific key
-db.addKeyListener("user-status", (msg) => {
-  console.log("User status updated:", msg.v);
-});
+// Get updates from the relays too
+await db.subscribeData("chat");
 ```
 
-::: tip
-Key listeners are debounced according to the `triggerDebouce` option (default: 100ms). This prevents rapid-fire updates from flooding your callbacks.
-:::
+For values, `msg` is a record:
+
+```ts
+interface VerificationData<T> {
+  k: string; // key
+  a: string; // author (public key)
+  t: number; // timestamp, in milliseconds
+  h: string; // event id
+  s: string; // event signature
+  v: T; // the value
+  c: string | null; // CRDT type, null for values
+}
+```
+
+For CRDT keys, `msg` is the document with all its changes in `v`, so a
+listener can merge them:
+
+```ts
+const doc = new MapCrdt(db.userAccount.getAddress());
+db.addKeyListener<MapChanges<string>[]>("shared-doc", (msg) => {
+  doc.mergeChanges(msg.v);
+});
+await db.subscribeData("shared-doc");
+```
 
 ### `ToolDb.removeKeyListener()`
-
-Type signature:
 
 ```ts
 function removeKeyListener(id: number): void;
 ```
 
-Removes the listener with the given ID.
-
-**Example:**
-
-```ts
-const listenerId = db.addKeyListener("key", callback);
-
-// Later, remove the listener
-db.removeKeyListener(listenerId);
-```
-
-::: warning
-Always remove listeners when they're no longer needed to prevent memory leaks and unnecessary processing.
-:::
-
 ### `ToolDb.triggerKeyListener()`
-
-Type signature:
 
 ```ts
 function triggerKeyListener<T>(key: string, message: VerificationData<T>): void;
 ```
 
-Manually triggers key listeners for a specific key. Useful for testing or synthetic events.
-
-## ID Listeners
-
-ID listeners trigger once for a specific message ID. Useful for waiting for acknowledgments.
-
-### `ToolDb.addIdListener()`
-
-Type signature:
-
-```ts
-function addIdListener(id: string, fn: (msg: ToolDbMessage) => void): void;
-```
-
-Creates a one-time listener for a specific message ID.
-
-**Parameters:**
-
-- `id` — The message ID to listen for
-- `fn` — Callback function receiving the full message
-
-**Example:**
-
-```ts
-// Wait for a response to a specific message
-const messageId = "unique-id-123";
-
-db.addIdListener(messageId, (response) => {
-  console.log("Got response:", response);
-});
-```
-
-::: tip
-ID listeners are automatically removed after being triggered once. Only one listener per ID is allowed.
-:::
-
-### `ToolDb.removeIdListener()`
-
-Type signature:
-
-```ts
-function removeIdListener(id: string): void;
-```
-
-Removes the ID listener without triggering it.
+Triggers the listeners of a key manually.
 
 ## Custom Verification
 
-Custom verification functions allow you to add application-specific validation to incoming messages.
+Every piece of data is verified before it is stored: signature, key,
+namespace owner, timestamp, and for CRDTs that every change is authored by
+its signer. Custom verificators add your own rules on top, for any key
+starting with a prefix.
 
 ### `ToolDb.addCustomVerification()`
 
-Type signature:
-
 ```ts
-function addCustomVerification<T>(
+function addCustomVerification<T = any>(
   key: string,
-  fn: (msg: VerificationData<T>, previous: T | undefined) => Promise<boolean>
+  fn: (msg: VerificationData<T>, previous: any) => Promise<boolean>
 ): number;
 ```
 
-Creates a custom verification function for all messages matching the key prefix.
+- `key` — a key prefix
+- `fn` — gets the data (for CRDTs, one change set: `msg.v` are its changes
+  and `msg.a` their proven author) and the previous data of the key; returns
+  `true` to accept it
 
-**Parameters:**
-
-- `key` — The key prefix to verify
-- `fn` — Async function returning `true` to accept, `false` to reject
-
-**Returns:** A number ID to remove the verification later.
-
-**Example:**
-
-```ts
-// Only allow updates from specific addresses
-async function trustedAuthorsOnly(
-  msg: VerificationData<any>,
-  previous: any
-): Promise<boolean> {
-  const trustedAddresses = ["0x123...", "0x456..."];
-  return trustedAddresses.includes(msg.a);
-}
-
-db.addCustomVerification("admin-", trustedAuthorsOnly);
-```
-
-The verification function receives:
-
-1. `msg` — The incoming message with all verification data
-2. `previous` — The previously stored value at this key (if any)
+All matching verificators must accept the data. Data that fails is not
+stored and does not trigger listeners.
 
 ### Verification Examples
 
-**Restrict to user namespaces only:**
+Only some users can write a shared key, with the `onlyAuthors` helper:
 
 ```ts
-async function privateNamespaceOnly(
-  msg: VerificationData<any>,
-  previous: any
-): Promise<boolean> {
-  // Only allow keys starting with ":" (private namespace)
-  return msg.k.startsWith(":");
-}
+import { onlyAuthors } from "tool-db";
 
-// Empty key triggers for ALL messages
-db.addCustomVerification("", privateNamespaceOnly);
+db.addCustomVerification("announcements", onlyAuthors([adminPubkey]));
 ```
 
-**Prevent value deletion:**
+Values can only grow:
 
 ```ts
-async function noOverwriteWithNull(
-  msg: VerificationData<any>,
-  previous: any
-): Promise<boolean> {
-  // Reject if new value is null/undefined and previous exists
-  if ((msg.v === null || msg.v === undefined) && previous !== undefined) {
-    return false;
-  }
-  return true;
-}
-
-db.addCustomVerification("important-", noOverwriteWithNull);
+db.addCustomVerification<number>("score-", async (msg, previous) => {
+  return typeof msg.v === "number" && (!previous || msg.v > previous.v);
+});
 ```
 
-**Schema validation:**
+In a shared CRDT map, users can only write their own entry:
 
 ```ts
-async function validateUserProfile(
-  msg: VerificationData<{ name: string; age: number }>,
-  previous: any
-): Promise<boolean> {
-  const { v: value } = msg;
-
-  // Validate required fields
-  if (!value.name || typeof value.name !== "string") return false;
-  if (!value.age || typeof value.age !== "number") return false;
-  if (value.age < 0 || value.age > 150) return false;
-
-  return true;
-}
-
-db.addCustomVerification(":user-profile.", validateUserProfile);
+db.addCustomVerification<MapChanges<string>[]>("requests-", async (msg) => {
+  return msg.v.every((change) => change.k === msg.a);
+});
 ```
 
-**Rate limiting:**
+No deletions in a CRDT:
 
 ```ts
-const messageTimestamps: Record<string, number[]> = {};
-
-async function rateLimitMessages(
-  msg: VerificationData<any>,
-  previous: any
-): Promise<boolean> {
-  const author = msg.a;
-  const now = Date.now();
-
-  if (!messageTimestamps[author]) {
-    messageTimestamps[author] = [];
-  }
-
-  // Keep only timestamps from last minute
-  messageTimestamps[author] = messageTimestamps[author].filter(
-    (t) => now - t < 60000
-  );
-
-  // Allow max 10 messages per minute
-  if (messageTimestamps[author].length >= 10) {
-    return false;
-  }
-
-  messageTimestamps[author].push(now);
-  return true;
-}
-
-db.addCustomVerification("chat-", rateLimitMessages);
+db.addCustomVerification<MapChanges<string>[]>("log-", async (msg) => {
+  return msg.v.every((change) => change.t !== "DEL");
+});
 ```
+
+::: warning Rules about who wrote first
+Rules based on who wrote first (like "the first user to take a name keeps
+it") can not be enforced on an open network: timestamps are chosen by the
+signer, and peers see data in different orders. Rules based on who is
+writing (like `onlyAuthors`) can.
+:::
+
+::: tip Relay nodes
+Verificators run where they are added. Add the same ones to your
+[relay nodes](./relay-node.md) so they do not store data your app rejects.
+:::
 
 ### `ToolDb.removeCustomVerification()`
-
-Type signature:
 
 ```ts
 function removeCustomVerification(id: number): void;
 ```
 
-Removes the custom verification function.
-
 ## Complete Example
 
-Here's a complete example combining listeners and verification:
-
 ```ts
-import { ToolDb, VerificationData } from "tool-db";
-import ToolDbWebrtc from "@tool-db/webrtc-network";
+import { ToolDb, onlyAuthors } from "tool-db";
 
-const db = new ToolDb({
-  networkAdapter: ToolDbWebrtc,
-  topic: "my-chat-app",
+const db = new ToolDb({ relays, topic: "my-app" });
+
+// Only the admin can post announcements
+db.addCustomVerification("announcement", onlyAuthors([adminPubkey]));
+
+db.addKeyListener<string>("announcement", (msg) => {
+  showBanner(msg.v);
 });
-
-await db.ready;
-await db.anonSignIn();
-
-// Track messages for UI
-const messages: Array<{ from: string; text: string; time: number }> = [];
-
-// Add key listener for chat messages
-const listenerId = db.addKeyListener<{ text: string }>("chat-", (msg) => {
-  messages.push({
-    from: msg.a,
-    text: msg.v.text,
-    time: msg.t,
-  });
-  renderMessages();
-});
-
-// Subscribe to receive updates from network
-db.subscribeData("chat-");
-
-// Add custom verification to filter spam
-db.addCustomVerification<{ text: string }>("chat-", async (msg) => {
-  // Reject empty messages
-  if (!msg.v.text || msg.v.text.trim() === "") return false;
-
-  // Reject messages over 1000 chars
-  if (msg.v.text.length > 1000) return false;
-
-  // Reject messages with banned words
-  const bannedWords = ["spam", "scam"];
-  const lowerText = msg.v.text.toLowerCase();
-  if (bannedWords.some((word) => lowerText.includes(word))) return false;
-
-  return true;
-});
-
-// Function to send a message
-async function sendMessage(text: string) {
-  await db.putData("chat-" + Date.now(), { text });
-}
-
-// Cleanup on page unload
-window.addEventListener("beforeunload", () => {
-  db.removeKeyListener(listenerId);
-});
+await db.subscribeData("announcement");
 ```

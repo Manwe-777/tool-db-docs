@@ -1,7 +1,7 @@
 {
   "name": "tool-db-docs",
   "version": "1.0.0",
-  "description": "Documentation for Tool Db - A Peer-to-Peer Decentralized Database",
+  "description": "Documentation for Tool Db - A database on top of Nostr",
   "main": "index.js",
   "author": {
     "name": "Manuel Etchegaray",

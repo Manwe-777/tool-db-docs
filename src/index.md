@@ -1,31 +1,30 @@
 ---
 home: true
-heroImage: https://raw.githubusercontent.com/Manwe-777/tool-db/main/example/public/logo.png
-tagline: A Peer-to-Peer Decentralized Database
+tagline: A database on top of Nostr
 actionText: Get Started →
 actionLink: /docs/
 features:
-  - title: 🔐 Cryptographically Secure
-    details: Public/private key authentication ensures all data is signed and verified. No central authority needed.
-  - title: 🌐 Fully Decentralized
-    details: Federated server mesh network with no single point of failure. Anyone can join the swarm.
+  - title: 🔐 Signed data
+    details: Every value and every CRDT change is signed by its author with Nostr keys, and verified by everyone who reads it.
+  - title: 🌐 Nostr native
+    details: Uses Nostr identities, events and relays, public ones or your own ToolDB relay nodes.
   - title: ⚡ Real-time Updates
-    details: Subscribe to live data changes with built-in key listeners and subscriptions.
+    details: Subscribe to keys and get every change live, through relay subscriptions.
   - title: 📴 Offline First
-    details: Works without connectivity. Data syncs automatically when peers reconnect.
+    details: Data is stored locally and synced with relays when connected.
   - title: 📦 Key-Value Storage
-    details: Document-based data model with flexible namespace support for public and private data.
+    details: Shared keys and user namespaces only their owner can write, plus custom verificators for your own rules.
   - title: 🔄 Built-in CRDTs
-    details: Conflict-free replicated data types for automatic conflict resolution across peers.
-footer: Made with ❤️ by Manwe | ISC License
+    details: Maps, lists and counters where the author of every change is provable.
+footer: Made with ❤️ by Manwe | Apache-2.0 License
 ---
 
 <div style="text-align: center; margin-top: 2rem;">
 
-## 🎮 Try it now!
+## 💬 Example
 
-**[Launch the Live Chat Demo →](https://manwe-777.github.io/tool-db-chat-example/)**
+**[An end to end encrypted group chat →](https://github.com/Manwe-777/tool-db/tree/main/example)**
 
-_Experience real-time P2P messaging in your browser_
+_Groups, join requests and NIP-44 encrypted messages, in a few hundred lines_
 
 </div>

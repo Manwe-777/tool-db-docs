@@ -1,354 +1,201 @@
 # CRDTs
 
-**CRDT** (Conflict-free Replicated Data Types) are essential for healthy peer-to-peer applications. They handle scattered, unordered updates and ensure all peers eventually converge to the same state, regardless of the order updates are received.
+**CRDTs** (Conflict-free Replicated Data Types) let many users change the
+same document at the same time, offline or online, and every peer ends up
+with the same result, whatever order it receives the changes in.
+
+In Tool Db every CRDT change is **signed by its author**: when you put a
+CRDT, your new changes are published as one signed change set, and every
+reader checks that each change in it was made by its signer. So the author
+of every change is provable, and relays can not add or alter changes.
 
 ## Built-in CRDT Types
 
-Tool Db includes three CRDT implementations:
+| Type             | Value              | Operations          |
+| ---------------- | ------------------ | ------------------- |
+| `MapCrdt<T>`     | `Record<string, T>`| `SET`, `DEL`        |
+| `ListCrdt<T>`    | `T[]`              | `PUSH`, `INS`, `DEL`|
+| `CounterCrdt`    | `number`           | `ADD`, `SUB`        |
 
-| Type | Operations | Use Case |
-|------|------------|----------|
-| **MapCRDT** | `SET`, `DEL` | Key-value stores with per-key conflict resolution |
-| **ListCRDT** | `INS`, `PUSH`, `DEL` | Ordered lists with concurrent insert support |
-| **CounterCRDT** | `ADD`, `SUB` | Distributed counters that merge correctly |
+Create them with **your public key as author**:
+
+```ts
+const doc = new MapCrdt<string>(db.userAccount.getAddress());
+```
+
+Changes by any other author can not be signed by you, so they are not
+published.
 
 ## MapCRDT
 
-A key-value map where each key tracks its own version history.
+A key-value map.
+
+### MapCRDT Operations
 
 ```ts
 import { MapCrdt } from "tool-db";
 
-// Create with the author's address
-const map = new MapCrdt<number>(db.userAccount.getAddress() || "");
+const map = new MapCrdt<string>(db.userAccount.getAddress());
+map.SET("name", "Alice");
+map.SET("color", "blue");
+map.DEL("color");
 
-// Set values
-map.SET("dogs", 3);
-map.SET("cats", 2);
-map.SET("birds", 1);
-
-// Delete a key
-map.DEL("birds");
-
-// Get the current value
-console.log(map.value); // { dogs: 3, cats: 2 }
+console.log(map.value); // { name: "Alice" }
 ```
-
-### MapCRDT Operations
-
-- `SET(key: string, value: T)` — Sets a key to a value
-- `DEL(key: string)` — Deletes a key
 
 ### MapCRDT Resolution
 
-When concurrent updates happen:
-1. Changes are sorted by index (version number)
-2. For equal indices, SET wins over DEL
-3. For equal indices and operation types, author address breaks ties
+Each change of a key has an index, one more than the last change its author
+saw; the highest index wins. For the same index, `DEL` wins over `SET`, and
+between two `SET`s the author with the highest public key wins.
 
 ## ListCRDT
 
-An ordered list that supports concurrent insertions.
+An ordered list.
+
+### ListCRDT Operations
 
 ```ts
 import { ListCrdt } from "tool-db";
 
-const list = new ListCrdt<string>(db.userAccount.getAddress() || "");
-
-// Push items to the end
+const list = new ListCrdt<string>(db.userAccount.getAddress());
 list.PUSH("first");
-list.PUSH("second");
+list.PUSH("third");
+list.INS("second", 1); // insert before index 1
+list.DEL(0); // delete the item at index 0
 
-// Insert at a specific position
-list.INS("inserted", 1); // Insert at index 1
-
-// Delete by index
-list.DEL(0); // Remove first item
-
-console.log(list.value); // ["inserted", "second"]
+console.log(list.value); // ["second", "third"]
 ```
-
-### ListCRDT Operations
-
-- `PUSH(value: T)` — Appends an item to the end
-- `INS(value: T, index: number)` — Inserts an item at a specific position
-- `DEL(index: number)` — Removes the item at the index (tombstones it)
 
 ### ListCRDT Resolution
 
-The list uses position references (prev/next indices) to maintain order during concurrent edits. Deleted items are tombstoned (marked as deleted) rather than removed, ensuring convergence.
+Inserts reference the items next to them, and deletes mark items as deleted
+(tombstones), so concurrent inserts and deletes from different users merge.
+
+::: warning Ordering
+When users insert at the same place concurrently, every peer ends up with the
+same list, but the order may not be the one each author saw.
+:::
 
 ## CounterCRDT
 
-A distributed counter that correctly merges additions and subtractions.
+A number many users can add to and subtract from.
+
+### CounterCRDT Operations
 
 ```ts
 import { CounterCrdt } from "tool-db";
 
-const counter = new CounterCrdt(db.userAccount.getAddress() || "");
-
-// Add to the counter
+const counter = new CounterCrdt(db.userAccount.getAddress());
 counter.ADD(10);
-counter.ADD(5);
-
-// Subtract from the counter
 counter.SUB(3);
 
-console.log(counter.value); // 12
+console.log(counter.value); // 7
 ```
-
-### CounterCRDT Operations
-
-- `ADD(value: number)` — Adds to the counter
-- `SUB(value: number)` — Subtracts from the counter
 
 ### CounterCRDT Resolution
 
-Each operation is tracked with the author and index, preventing duplicate application. All ADD/SUB operations are summed to get the final value.
+The value is the sum of every change of every author.
 
 ## Storing CRDTs
 
-Use `putCrdt()` to store CRDT changes:
-
 ```ts
-const map = new MapCrdt<string>(db.userAccount.getAddress() || "");
-map.SET("name", "Alice");
-map.SET("status", "online");
-
-// Store in user namespace
-await db.putCrdt("my-profile", map, true);
+const map = new MapCrdt<string>(db.userAccount.getAddress());
+map.SET("hello", "world");
+await db.putCrdt("shared-doc", map);
 ```
+
+`putCrdt` publishes only the changes you made since your last put, signed as
+one change set, and returns `null` if there was nothing new.
 
 ## Retrieving CRDTs
 
-Use `getCrdt()` to fetch and merge changes:
+```ts
+const map = new MapCrdt<string>(db.userAccount.getAddress());
+await db.getCrdt("shared-doc", map);
+
+console.log(map.value);
+```
+
+`getCrdt` gets every change set of the document from local data and the
+relays, verifies them, and merges their changes into your CRDT. To continue
+editing a document, get it first, then change it and put it:
 
 ```ts
-const map = new MapCrdt<string>(db.userAccount.getAddress() || "");
-
-// Fetch and merge changes from network
-await db.getCrdt("my-profile", map, true);
-
-console.log(map.value); // { name: "Alice", status: "online" }
+const counter = new CounterCrdt(db.userAccount.getAddress());
+await db.getCrdt("visits", counter);
+counter.ADD(1);
+await db.putCrdt("visits", counter);
 ```
 
 ## Subscribing to CRDT Updates
 
-Combine key listeners with subscriptions for real-time updates:
-
 ```ts
-import { MapCrdt, MapChanges } from "tool-db";
+const map = new MapCrdt<string>(db.userAccount.getAddress());
 
-const sharedMap = new MapCrdt<string>(db.userAccount.getAddress() || "");
-const key = db.getUserNamespacedKey("shared-data");
-
-// Listen for incoming changes
-db.addKeyListener<MapChanges<string>[]>(key, (msg) => {
-  // Merge incoming changes
-  sharedMap.mergeChanges(msg.v);
-  console.log("Updated:", sharedMap.value);
+db.addKeyListener<MapChanges<string>[]>("shared-doc", (msg) => {
+  map.mergeChanges(msg.v); // msg.v has every change of the document
 });
-
-// Subscribe to receive updates
-db.subscribeData("shared-data", true);
-
-// Initial fetch
-await db.getCrdt("shared-data", sharedMap, true);
+await db.subscribeData("shared-doc");
 ```
 
 ## Custom Verification
 
-Filter incoming CRDT changes with custom verificators:
+Custom verificators get each change set: `msg.v` are its changes, and `msg.a`
+their (proven) author.
 
 ```ts
-import { MapChanges, VerificationData } from "tool-db";
+// Users can only change their own entry of the map
+db.addCustomVerification<MapChanges<string>[]>("profiles-map", async (msg) =>
+  msg.v.every((change) => change.k === msg.a)
+);
 
-// Only allow SET operations, reject DEL
-function noDeletesAllowed(
-  msg: VerificationData<MapChanges<number>[]>
-): Promise<boolean> {
-  return new Promise((resolve) => {
-    const hasDelete = msg.v.some(change => change.t === "DEL");
-    resolve(!hasDelete); // Reject if any DEL found
-  });
-}
-
-// Apply to a key
-db.addCustomVerification<MapChanges<number>[]>(
-  db.getUserNamespacedKey("protected-data"),
-  noDeletesAllowed
+// Only additions, no deletions
+db.addCustomVerification<MapChanges<string>[]>("guestbook", async (msg) =>
+  msg.v.every((change) => change.t !== "DEL")
 );
 ```
 
-::: warning
-Custom verification filters the entire message. If one change in the array fails verification, all changes in that message are rejected (to preserve hash integrity).
-:::
+CRDTs in a [user namespace](./namespaces.md) only accept changes from the
+namespace owner.
 
 ## CRDT Change Types
 
 ### MapChanges
 
 ```ts
-type MapOperations = "SET" | "DEL";
-
-interface SetMapChange<T> {
-  t: "SET";      // Operation type
-  k: string;     // Key
-  v: T;          // Value
-  a: string;     // Author address
-  i: number;     // Index/version
-}
-
-interface DelMapChange<T> {
-  t: "DEL";
-  k: string;
-  a: string;
-  i: number;
-}
-
-type MapChanges<T> = SetMapChange<T> | DelMapChange<T>;
+type MapChanges<T> =
+  | { t: "SET"; a: string; k: string; i: number; v: T }
+  | { t: "DEL"; a: string; k: string; i: number };
 ```
 
 ### ListChanges
 
 ```ts
-type ListOperations = "INS" | "DEL";
-
-interface InsListChange<T> {
-  t: "INS";                   // Insert operation
-  v: T;                       // Value
-  i: string;                  // Unique index (author + sequence)
-  p: string | undefined;      // Previous item index
-  n: string | undefined;      // Next item index
-}
-
-interface DelListChange<T> {
-  t: "DEL";
-  v: string;                  // Target index to tombstone
-  i: string;
-}
-
-type ListChanges<T> = InsListChange<T> | DelListChange<T>;
+type ListChanges<T> =
+  | { t: "INS"; i: string; v: T; p?: string; n?: string }
+  | { t: "DEL"; i: string; v: string };
 ```
+
+List indexes (`i`) are `"<author>-<sequence>"`; the author is the part before
+the last `-`.
 
 ### CounterChanges
 
 ```ts
-type CounterOperations = "ADD" | "SUB";
-
-interface CounterChange {
-  t: CounterOperations;       // ADD or SUB
-  v: number;                  // Value to add/subtract
-  a: string;                  // Author address
-  i: number;                  // Index/sequence
-}
+type CounterChanges =
+  | { t: "ADD"; a: string; i: number; v: number }
+  | { t: "SUB"; a: string; i: number; v: number };
 ```
 
-## Creating Custom CRDTs
+## How they are stored
 
-Extend `BaseCrdt` to create custom CRDT types:
-
-```ts
-import { BaseCrdt } from "tool-db";
-
-interface MyChange {
-  t: "SET";
-  v: string;
-  a: string;
-  i: number;
-}
-
-class MyCrdt extends BaseCrdt<string, MyChange, string> {
-  public type = "MY_CRDT";
-  
-  private _changes: MyChange[] = [];
-  private _value = "";
-  private _author: string;
-
-  constructor(author: string) {
-    super();
-    this._author = author;
-  }
-
-  mergeChanges(changes: MyChange[]) {
-    // Add unique changes
-    changes.forEach(change => {
-      if (!this._changes.some(c => c.i === change.i && c.a === change.a)) {
-        this._changes.push(change);
-      }
-    });
-    this.calculate();
-  }
-
-  getChanges(): MyChange[] {
-    return this._changes;
-  }
-
-  get value(): string {
-    return this._value;
-  }
-
-  private calculate() {
-    // Sort and compute value
-    this._changes.sort((a, b) => a.i - b.i);
-    this._value = this._changes[this._changes.length - 1]?.v || "";
-  }
-
-  SET(value: string) {
-    const ourChanges = this._changes.filter(c => c.a === this._author);
-    this._changes.push({
-      t: "SET",
-      v: value,
-      a: this._author,
-      i: ourChanges.length,
-    });
-    this.calculate();
-  }
-}
-```
+Each change set is a Nostr event (kind `1078`), tagged with the document key
+and its CRDT type, and signed by its author. Relays keep every change set, and
+a document is all of them merged. See [How it works](./how-it-works.md).
 
 ## Performance Considerations
 
-- CRDTs store a history of all changes, which grows over time
-- Consider periodic compaction for long-lived CRDTs
-- MapCRDT only stores the latest version per key after sorting
-- ListCRDT tombstones deleted items (they're marked but retained)
-- CounterCRDT retains all operations for correct merge behavior
-
-::: tip
-For high-frequency updates, consider batching changes and calling `putCrdt()` less frequently.
-:::
-
-## Using External CRDT Libraries
-
-You can use libraries like [Automerge](https://automerge.org/) or [Yjs](https://docs.yjs.dev/) by wrapping them in a `BaseCrdt` class:
-
-```ts
-import { BaseCrdt } from "tool-db";
-import * as Automerge from "@automerge/automerge";
-
-class AutomergeCrdt<T> extends BaseCrdt<T, Uint8Array, T> {
-  public type = "AUTOMERGE";
-  private doc: Automerge.Doc<T>;
-
-  constructor(initial: T) {
-    super();
-    this.doc = Automerge.init<T>();
-    this.doc = Automerge.change(this.doc, d => Object.assign(d, initial));
-  }
-
-  mergeChanges(changes: Uint8Array[]) {
-    changes.forEach(change => {
-      this.doc = Automerge.applyChanges(this.doc, [change])[0];
-    });
-  }
-
-  getChanges(): Uint8Array[] {
-    return Automerge.getAllChanges(this.doc);
-  }
-
-  get value(): T {
-    return this.doc;
-  }
-}
-```
+- Change sets are never compacted, so documents keep growing; prefer several
+  smaller documents over one big one.
+- Every new change set is verified once (one signature check), then cached.

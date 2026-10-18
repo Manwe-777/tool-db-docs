@@ -1,267 +1,169 @@
-# User API
+# Identity
 
-The user API handles authentication and identity management. All user-related operations use the configured user adapter (default: ECDSA).
+Every identity is a **Nostr key** (secp256k1, Schnorr signatures). Your
+address is your hex public key, the same identity other Nostr apps see.
 
-## `ToolDb.signUp()`
+Tool Db never needs your secret key directly: it asks a **signer** (the
+`userAdapter` option) to sign events. Every event is verified with Schnorr
+signatures, whatever signer its author used.
 
-Type signature:
+| Signer             | Holds the key            | Use it for                                    |
+| ------------------ | ------------------------ | --------------------------------------------- |
+| `ToolDbNostrUser`  | In memory (default)      | Servers, bots, apps that manage their keys    |
+| `ToolDbNip07User`  | A browser extension      | Users with their own Nostr identity (NIP-07)  |
 
-```ts
-async function signUp(
-  user: string,
-  password: string
-): Promise<PutMessage<UserRootData>>;
-```
-
-Creates a new user in the database with the given username and password.
-
-**Parameters:**
-
-- `user` — The username to register
-- `password` — The password for key encryption
-
-**Returns:** A promise resolving to the put message for the user data.
-
-::: warning
-The private keys are stored in the database **encrypted with your password**. If you lose the password, there is no way to recover the private keys. Consider implementing key backup functionality in your application.
+::: tip No usernames
+Version 2 had `signUp` and `signIn` with usernames and passwords, which
+published encrypted keys to the network. They are gone: names come from
+[profiles](#profiles), and keys stay with their owner.
 :::
 
-**Example:**
+## Local keys (`ToolDbNostrUser`)
+
+The default signer. A new database starts with a new random key, usable right
+away.
+
+### `ToolDb.anonSignIn()`
 
 ```ts
-try {
-  await db.signUp("alice", "secure-password-123");
-  console.log("User created successfully!");
-} catch (error) {
-  console.error("Sign up failed:", error);
+function anonSignIn(): Promise<void>;
+```
+
+Switches to a new random identity.
+
+### `ToolDb.keysSignIn()`
+
+```ts
+function keysSignIn(privateKey: string, username?: string): Promise<unknown>;
+```
+
+Signs in with an existing secret key, as hex or `nsec` (NIP-19).
+
+```ts
+await db.keysSignIn("nsec1...", "alice");
+```
+
+### Saving keys with a password
+
+To keep a key between sessions, encrypt it with a password (NIP-49: scrypt
+and XChaCha20-Poly1305) and store the result yourself, for example in
+`localStorage`. It is never sent anywhere.
+
+```ts
+// Save
+const encrypted = await db.userAccount.encryptAccount(password);
+localStorage.setItem("account", JSON.stringify(encrypted));
+// { name: "alice", ncryptsec: "ncryptsec1..." }
+
+// Restore, rejects with a wrong password
+const saved = JSON.parse(localStorage.getItem("account")!);
+const account = await db.userAccount.decryptAccount(saved, password);
+await db.userAccount.setUser(account, saved.name);
+```
+
+`ncryptsec` strings are compatible with other Nostr apps.
+`ToolDbNostrUser.encryptionLogN` sets the scrypt cost (default `16`).
+
+### Other methods
+
+```ts
+const user = db.userAccount as ToolDbNostrUser;
+
+user.getAddress(); // hex public key
+user.getUsername(); // the name given when signing in
+user.npub; // public key as npub (NIP-19)
+user.exportSecretKey(); // secret key as nsec, handle with care
+```
+
+## Browser extensions (`ToolDbNip07User`)
+
+Signs with the user's Nostr browser extension (`window.nostr`, NIP-07), so
+your app never sees the secret key.
+
+```ts
+import { ToolDb, ToolDbNip07User } from "tool-db";
+
+const db = new ToolDb({ relays, topic: "my-app", userAdapter: ToolDbNip07User });
+await db.ready; // loads the public key from the extension
+```
+
+- Events returned by the extension are checked to be valid, signed by our
+  public key, and exactly what was asked to sign.
+- `anonSignIn`, `keysSignIn` and `encryptAccount` reject: the key belongs to
+  the extension.
+- `db.ready` rejects if there is no extension.
+
+## Profiles
+
+Names and pictures live in Nostr profiles (kind 0 events), shared with every
+Nostr app.
+
+### `ToolDb.putProfile()`
+
+```ts
+function putProfile(profile: Profile): Promise<NostrEvent>;
+
+interface Profile {
+  name?: string;
+  display_name?: string;
+  about?: string;
+  picture?: string;
+  nip05?: string;
+  [field: string]: unknown;
 }
 ```
 
-## `ToolDb.signIn()`
-
-Type signature:
-
 ```ts
-async function signIn(user: string, password: string): Promise<void>;
+await db.putProfile({ name: "alice", about: "Hello!" });
 ```
 
-Signs in with existing credentials. This retrieves the encrypted keys from the database and decrypts them with the password.
-
-**Parameters:**
-
-- `user` — The username to sign in with
-- `password` — The password to decrypt the keys
-
-**Returns:** A promise that resolves when sign in is complete.
-
-**Example:**
+### `ToolDb.getProfile()`
 
 ```ts
-try {
-  await db.signIn("alice", "secure-password-123");
-  console.log("Signed in as:", db.userAccount.getUsername());
-  console.log("Address:", db.userAccount.getAddress());
-} catch (error) {
-  console.error("Sign in failed:", error);
+function getProfile(pubkey: string, timeoutMs?: number): Promise<Profile | null>;
+```
+
+The newest profile of a user, from local data and the relays. Only profiles
+signed by that user are accepted.
+
+## Verified names (NIP-05)
+
+Anyone can write any name in their profile. A NIP-05 identifier
+(`name@domain`) is confirmed by the domain, at
+`https://domain/.well-known/nostr.json`.
+
+```ts
+import { verifyProfileName, resolveNip05, verifyNip05 } from "tool-db";
+
+const profile = await db.getProfile(pubkey);
+if (profile && (await verifyProfileName(profile, pubkey))) {
+  // profile.nip05 really belongs to pubkey
 }
+
+await resolveNip05("alice@example.com"); // { pubkey, relays } or undefined
+await verifyNip05("alice@example.com", pubkey); // true or false
 ```
 
-## `ToolDb.anonSignIn()`
+Redirects are not followed, as the spec requires.
 
-Type signature:
+## Encryption
+
+Signers also encrypt and decrypt messages for other public keys (NIP-44):
 
 ```ts
-async function anonSignIn(): Promise<void>;
+const payload = await db.userAccount.nip44Encrypt(bobPubkey, "hi bob");
+const text = await bob.userAccount.nip44Decrypt(alicePubkey, payload);
 ```
 
-Creates a new, randomized set of keys for anonymous/guest usage. The keys are generated locally but not persisted to the network.
+See [Encryption](./encryption.md) for group keys.
 
-**Returns:** A promise that resolves when the anonymous user is created.
+## Custom signers
 
-::: tip
-Use this for guest access. Users can still write data, which will be stored under their ephemeral public key namespace. If they log out without saving their keys, they won't be able to access that data again.
+Extend `ToolDbUserAdapter` to sign with something else (a hardware key, a
+remote signer...). Implement `signEvent`, `getAddress` and, for encryption,
+`nip44Encrypt` and `nip44Decrypt`; signers that load their key
+asynchronously can also implement `ready`.
+
+::: warning Not available yet
+Remote signers (NIP-46, "bunkers") are not supported yet.
 :::
-
-**Example:**
-
-```ts
-await db.anonSignIn();
-console.log("Signed in as guest:", db.userAccount.getAddress());
-```
-
-::: warning
-Anonymous sign in works offline, but `signUp` requires network connectivity to check for username conflicts.
-:::
-
-## `ToolDb.keysSignIn()`
-
-Type signature:
-
-```ts
-async function keysSignIn(
-  privateKey: string,
-  username?: string
-): Promise<{
-  signKeys: CryptoKeyPair;
-  encryptionKeys: CryptoKeyPair;
-}>;
-```
-
-Signs in directly with a private key instead of username/password.
-
-**Parameters:**
-
-- `privateKey` — The private key in hex format
-- `username` — Optional username to associate (for display purposes)
-
-**Returns:** A promise resolving to the sign and encryption key pairs.
-
-**Example:**
-
-```ts
-// User exports their private key
-const privateKey = "0x1234..."; // User's saved private key
-
-await db.keysSignIn(privateKey, "alice");
-console.log("Signed in with keys!");
-```
-
-::: tip
-Use this feature to let users download their keys for backup, or to sign in across multiple devices without remembering passwords.
-:::
-
-## `ToolDb.userAccount`
-
-The `userAccount` property provides access to the current user's account adapter.
-
-### `userAccount.getAddress()`
-
-```ts
-function getAddress(): string | undefined;
-```
-
-Returns the current user's public key/address, or `undefined` if not signed in.
-
-**Example:**
-
-```ts
-const address = db.userAccount.getAddress();
-if (address) {
-  console.log("Signed in as:", address);
-} else {
-  console.log("Not signed in");
-}
-```
-
-### `userAccount.getUsername()`
-
-```ts
-function getUsername(): string | undefined;
-```
-
-Returns the current user's username, or `undefined` if not available.
-
-**Example:**
-
-```ts
-const name = db.userAccount.getUsername();
-console.log("Hello,", name || "Anonymous");
-```
-
-### `userAccount.signData()`
-
-```ts
-async function signData(data: string): Promise<string>;
-```
-
-Signs data with the user's private key.
-
-**Example:**
-
-```ts
-const signature = await db.userAccount.signData("message to sign");
-console.log("Signature:", signature);
-```
-
-### `userAccount.verifySignature()`
-
-```ts
-async function verifySignature(
-  message: Partial<VerificationData<any>>
-): Promise<boolean>;
-```
-
-Verifies a message signature.
-
-**Example:**
-
-```ts
-const isValid = await db.userAccount.verifySignature(message);
-if (isValid) {
-  console.log("Signature is valid!");
-}
-```
-
-### `userAccount.encryptAccount()`
-
-```ts
-async function encryptAccount(password: string): Promise<unknown>;
-```
-
-Encrypts the current account with a password for storage.
-
-### `userAccount.decryptAccount()`
-
-```ts
-async function decryptAccount(acc: unknown, password: string): Promise<any>;
-```
-
-Decrypts an encrypted account with the password.
-
-## Authentication Flow
-
-Here's a typical authentication flow:
-
-```ts
-import { ToolDb } from "tool-db";
-import ToolDbWebrtc from "@tool-db/webrtc-network";
-
-const db = new ToolDb({
-  networkAdapter: ToolDbWebrtc,
-  topic: "my-app",
-});
-
-// Wait for initialization
-await db.ready;
-
-// Check if we have a saved user
-if (db.userAccount.getAddress()) {
-  console.log("Welcome back,", db.userAccount.getUsername());
-} else {
-  // New user or guest
-  await db.anonSignIn();
-  console.log("Signed in as guest");
-}
-
-// Later, user wants to create an account
-async function createAccount(username: string, password: string) {
-  try {
-    await db.signUp(username, password);
-    console.log("Account created!");
-  } catch (error) {
-    if (error.message.includes("exists")) {
-      console.log("Username already taken");
-    }
-  }
-}
-
-// Or sign in to existing account
-async function login(username: string, password: string) {
-  try {
-    await db.signIn(username, password);
-    console.log("Welcome,", db.userAccount.getUsername());
-  } catch (error) {
-    console.log("Invalid credentials");
-  }
-}
-```
